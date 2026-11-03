@@ -1,0 +1,151 @@
+# Bugline: the engineering room, its two coding agents and their roles.
+#
+# Shape taken from the official two-agent example template and its two-room
+# sibling, support-desk.template.yaml, both in
+# https://github.com/sandbox-quantum/switch/tree/main/examples/agent-templates
+# Written for template version 1 on Switch server 0.31.
+#
+# Switch Console creates the two coding agents under `agents:`. The server
+# creates the `room:` on the Slack connection, with its roles, the repo
+# reference, the front desk alias and a kickoff message.
+#
+# What this template cannot do, and where it is done instead
+# (docs/switch-setup.md walks through each one):
+# - The Telegram room bugline-support. Telegram bots cannot create chats, so
+#   the room appears when the bot is added to the group.
+# - The links between bugline-support and bugline-eng. Template `links:` only
+#   join rooms made by the same template. scripts/setup_rooms.py makes them.
+# - The front desk agent. Templates only create coding agents (provider claude,
+#   codex or opencode). The front desk registers itself over the agent protocol
+#   and is named here as an existing agent, so register it first.
+# - Access rules beyond the presets. The fixer's rule "the PM only, in
+#   bugline-eng only" is a custom rule set in Switch Console.
+# - The shared documents. They live in switch/docs/ and go into the room as
+#   library documents in the bugline-kit package, so their text exists in one
+#   place. Version 1 templates cannot attach packages.
+# - `!follow-ups off`. It is a chat command, typed in each room.
+version: 1
+
+params:
+  team:
+    type: string
+    description: >-
+      Prefix for the room and the two agents. Keep bugline for the real run;
+      use another prefix to test the template without name clashes.
+    default: bugline
+    pattern: "[a-z][a-z0-9-]*"
+  frontdesk:
+    type: string
+    description: >-
+      Name of the front desk agent. It must already be registered
+      (agents/frontdesk/README.md), or the run stops.
+    default: bugline-frontdesk
+    input: advanced
+  repo_url:
+    type: string
+    description: The GitHub repo the agents read and fix. Change it if you forked Bugline.
+    default: https://github.com/Ishaan2053/bugline
+    input: advanced
+  provider:
+    type: provider
+    description: Which coding agent backs the reproducer and the fixer. The first one installed is chosen.
+    default: [claude, opencode]
+    input: advanced
+  location:
+    type: location
+    description: The machine both agents run on.
+    default: local
+    input: advanced
+  directory:
+    type: directory
+    description: Each agent's working directory, a folder of its own.
+    default: 'C:\bugline-agents\{agent}'
+    input: advanced
+  bridge:
+    type: bridge
+    description: >-
+      The Slack connection. The room and its Slack channel are created there.
+      Do not pick Telegram; it cannot create chats.
+    required: true
+
+agents:
+  # The briefs live in switch/agent-briefs/. These short instructions point
+  # there so the brief text is not copied into this file. After the run, the
+  # owner pastes the full brief into Agent instructions in Switch Console.
+  - name: "{team}-repro"
+    description: Reproduces bug tickets in bugline-eng and posts a verdict
+    # Me and my agents: the PM and the front desk (both the owner's) can
+    # address it. No custom rule needed.
+    addressing: owner-agents
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    # Reuse an agent of this name if one was already made in Switch Console.
+    allow_existing: true
+    instructions: |
+      You are the reproducer for Bugline. Your brief is
+      switch/agent-briefs/reproducer.md in {repo_url}. Clone that repo into
+      your working directory if it is not there, read the brief, and follow
+      it. Until you have read it, do nothing but say you are reading it.
+  - name: "{team}-fixer"
+    description: Fixes a bug ticket after the PM approves it and opens a PR
+    # The closest preset. Replace it after the run with a custom rule in
+    # Switch Console: the PM's user, room bugline-eng, no agents.
+    addressing: owner
+    provider: "{provider}"
+    location: "{location}"
+    directory: "{directory}"
+    allow_existing: true
+    instructions: |
+      You are the fixer for Bugline. Your brief is
+      switch/agent-briefs/fixer.md in {repo_url}. Clone that repo into your
+      working directory if it is not there, read the brief, and follow it.
+      Change no code until you have read it and the PM has approved a ticket
+      in its thread.
+
+room:
+  name: "{team}-eng"
+  description: Reproduce, approve and fix bugs reported in bugline-support
+  # The rules are in switch/room-instructions-eng.md. scripts/setup_rooms.py
+  # replaces this pointer with the whole file, so the text lives in one place.
+  instructions: |
+    Room rules: switch/room-instructions-eng.md in {repo_url}. Read it and
+    follow it. Shared documents: switch/docs/ in the same repo.
+  bridge: "{bridge}"
+  channel_type: channel_public
+  agents: ["{frontdesk}", "{team}-repro", "{team}-fixer"]
+  users: ["{$creator}"]
+  # The front desk holds no role (an agent holds one role across all its
+  # rooms), so it gets an alias in each room instead. Unverified: whether a
+  # {param} is expanded in a map key. setup_rooms.py sets the alias as well.
+  aliases:
+    "{frontdesk}": frontdesk
+  roles:
+    - name: reproducer
+      exclusive: false
+      instructions: |
+        Reproduce the bug tickets the front desk posts here. Follow
+        switch/docs/repro-checklist.md and post your verdict in the ticket's
+        thread. Never guess.
+    - name: fixer
+      exclusive: true
+      instructions: |
+        Fix a ticket only after the PM approves it in the ticket's thread.
+        Follow switch/docs/fix-policy.md. Post the PR link to @frontdesk in
+        that thread when done.
+  references:
+    - type: github
+      name: bugline-repo
+      description: The Bugline repo, including the demo app the agents fix
+      instructions: >-
+        The demo app is in demo-app/. Room rules are in switch/, shared
+        documents in switch/docs/, agent briefs in switch/agent-briefs/.
+      value:
+        urls: ["{repo_url}"]
+
+# Posted for the deployer once everyone has joined. It wakes both agents so
+# they take their roles; a role reaches an agent only while it holds it.
+kickoff: |
+  @{team}-repro take the reproducer role in this room, then say hello in one
+  line. @{team}-fixer take the fixer role in this room, then say hello in one
+  line and say who may approve your work.
