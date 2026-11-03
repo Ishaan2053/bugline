@@ -5,6 +5,7 @@ to change a model name, a limit or a path, and tests can point paths at temporar
 """
 
 import os
+import re
 from pathlib import Path
 
 AGENT_DIR = Path(__file__).resolve().parent
@@ -15,6 +16,30 @@ def _path_from_env(var: str, default: Path) -> Path:
     """Path from env var `var`, or `default`. A relative value is taken from the agent dir."""
     value = os.environ.get(var)
     return AGENT_DIR / value if value else default
+
+
+def _load_env_file(path: Path) -> None:
+    """Read KEY=VALUE lines from `path` into the environment, for runs outside Docker.
+
+    Variables that are already set win, so the shell and Docker's env_file override the file.
+    """
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+_load_env_file(AGENT_DIR / ".env")
+
+
+def require_env(name: str) -> str:
+    """Value of env var `name`. Raises if it is not set, so the failure is obvious at start."""
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set; see agents/frontdesk/.env.example")
+    return value
 
 
 # --- Gemini (CLAUDE.md section 6) ---------------------------------------------------------------
@@ -31,11 +56,8 @@ REPLY_MAX_LINES = 10
 
 
 def gemini_api_key() -> str:
-    """The Google AI Studio key. Raises if it is not set, so the failure is obvious at start."""
-    key = os.environ.get(GEMINI_KEY_ENV)
-    if not key:
-        raise RuntimeError(f"{GEMINI_KEY_ENV} is not set; see agents/frontdesk/.env.example")
-    return key
+    """The Google AI Studio key."""
+    return require_env(GEMINI_KEY_ENV)
 
 
 # --- Tickets and rate guards (CLAUDE.md section 2) ----------------------------------------------
@@ -50,8 +72,52 @@ def format_ticket_id(n: int) -> str:
     return f"{TICKET_PREFIX}-{n}"
 
 
+# A close message in the eng room carries a ticket id and a GitHub PR link.
+TICKET_ID_RE = re.compile(rf"\b{TICKET_PREFIX}-(\d+)\b")
+PR_URL_RE = re.compile(r"https://github\.com/[^\s]+/pull/\d+")
+
+
+# --- Switch (CLAUDE.md section 5) ---------------------------------------------------------------
+AGENT_NAME = "bugline-frontdesk"
+AGENT_DESCRIPTION = (
+    "Bugline front desk: takes reports in the support chat, hands complete bugs to engineering"
+    " and tells the reporter when they are fixed."
+)
+SWITCH_API_URL_ENV = "SWITCH_API_URL"  # the bridge ("API URL"), not the Gateway web page
+REGISTRATION_KEY_ENV = "SWITCH_REGISTRATION_KEY"
+
+# Room keys used in the code, the Switch room each one is, and the env var with its room id.
+ROOM_SUPPORT = "support"
+ROOM_ENG = "eng"
+ROOM_NAMES = {ROOM_SUPPORT: "bugline-support", ROOM_ENG: "bugline-eng"}
+ROOM_ID_ENVS = {ROOM_SUPPORT: "SWITCH_SUPPORT_ROOM_ID", ROOM_ENG: "SWITCH_ENG_ROOM_ID"}
+
+REPRODUCER_ROLE = "reproducer"
+# Optional agent name targeted alongside the role. A role mention reaches an agent only while its
+# session holds the role; a name reaches it either way.
+REPRODUCER_NAME = os.environ.get("FRONTDESK_REPRODUCER_NAME", "")
+# send_targeted_message statuses that mean the target will see the message.
+REACHABLE_STATUSES = frozenset({"live", "awaiting_manual_poll"})
+
+RECONNECT_START_S = 1.0  # WebSocket reconnect backoff, doubled up to the cap
+RECONNECT_CAP_S = 30.0
+HTTP_TIMEOUT_S = 30.0
+
+
+def switch_api_url() -> str:
+    return require_env(SWITCH_API_URL_ENV).rstrip("/")
+
+
+def room_ids() -> dict[str, str]:
+    """Room key -> Switch room id, from the environment."""
+    return {key: require_env(env) for key, env in ROOM_ID_ENVS.items()}
+
+
 # --- Files --------------------------------------------------------------------------------------
-DB_PATH = _path_from_env("FRONTDESK_DB", AGENT_DIR / "state" / "frontdesk.db")
+STATE_DIR = _path_from_env("FRONTDESK_STATE_DIR", AGENT_DIR / "state")
+DB_PATH = _path_from_env("FRONTDESK_DB", STATE_DIR / "frontdesk.db")
+CREDENTIALS_PATH = STATE_DIR / "credentials.json"  # agent id + API key, written once by --register
+CONNECTIONS_PATH = STATE_DIR / "connections.json"  # one stable connection id per room
 CALLS_LOG_PATH = _path_from_env("FRONTDESK_CALLS_LOG", AGENT_DIR / "calls.log")
 PROMPTS_DIR = AGENT_DIR / "prompts"
 
