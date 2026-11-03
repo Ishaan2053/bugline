@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS subscribers (
     ticket_id TEXT NOT NULL REFERENCES tickets (ticket_id),
     user_id   TEXT NOT NULL,
     room_id   TEXT NOT NULL,
+    name      TEXT NOT NULL DEFAULT '',
+    thread_id TEXT,
     PRIMARY KEY (ticket_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS drafts (
@@ -88,8 +90,12 @@ class Draft:
 
 
 class Subscriber(NamedTuple):
+    """Who to tell when a ticket closes: their name, and the message they reported it in."""
+
     user_id: str
     room_id: str
+    name: str = ""
+    thread_id: str | None = None
 
 
 class Store:
@@ -125,8 +131,12 @@ class Store:
         title: str,
         summary: str,
         report: dict[str, Any],
+        thread_id: str | None = None,
     ) -> str:
-        """Create the next ticket (BL-1, BL-2, ...), subscribe the reporter, return its id."""
+        """Create the next ticket (BL-1, BL-2, ...), subscribe the reporter, return its id.
+
+        `thread_id` is the reporter's message, so the "fixed" reply lands under it.
+        """
         with self._db:
             (last,) = self._db.execute("SELECT COALESCE(MAX(n), 0) FROM tickets").fetchone()
             ticket_id = config.format_ticket_id(last + 1)
@@ -145,11 +155,8 @@ class Store:
                     self._iso_now(),
                 ),
             )
-            # The reporter is the first subscriber, so closing a ticket has one list to notify.
-            self._db.execute(
-                "INSERT INTO subscribers (ticket_id, user_id, room_id) VALUES (?, ?, ?)",
-                (ticket_id, reporter_id, support_room_id),
-            )
+        # The reporter is the first subscriber, so closing a ticket has one list to notify.
+        self.subscribe(ticket_id, reporter_id, support_room_id, reporter_name, thread_id)
         return ticket_id
 
     def get_ticket(self, ticket_id: str) -> Ticket | None:
@@ -161,12 +168,20 @@ class Store:
         rows = self._db.execute("SELECT * FROM tickets WHERE status = 'open' ORDER BY n").fetchall()
         return [_ticket(row) for row in rows]
 
-    def subscribe(self, ticket_id: str, user_id: str, room_id: str) -> None:
+    def subscribe(
+        self,
+        ticket_id: str,
+        user_id: str,
+        room_id: str,
+        name: str = "",
+        thread_id: str | None = None,
+    ) -> None:
         """Add a user to a ticket's notify list. Subscribing twice is a no-op."""
         with self._db:
             self._db.execute(
-                "INSERT OR IGNORE INTO subscribers (ticket_id, user_id, room_id) VALUES (?, ?, ?)",
-                (ticket_id, user_id, room_id),
+                "INSERT OR IGNORE INTO subscribers (ticket_id, user_id, room_id, name, thread_id)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (ticket_id, user_id, room_id, name, thread_id),
             )
 
     def close_ticket(self, ticket_id: str, pr_url: str) -> list[Subscriber]:
@@ -184,10 +199,11 @@ class Store:
         if not updated:
             return []
         rows = self._db.execute(
-            "SELECT user_id, room_id FROM subscribers WHERE ticket_id = ? ORDER BY rowid",
+            "SELECT user_id, room_id, name, thread_id FROM subscribers WHERE ticket_id = ?"
+            " ORDER BY rowid",
             (ticket_id,),
         ).fetchall()
-        return [Subscriber(row["user_id"], row["room_id"]) for row in rows]
+        return [Subscriber(*row) for row in rows]
 
     # --- drafts ---------------------------------------------------------------------------------
 
