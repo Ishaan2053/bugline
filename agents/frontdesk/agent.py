@@ -152,7 +152,8 @@ def main() -> int:
         if args.register:
             url, key = config.switch_api_url(), config.require_env(config.REGISTRATION_KEY_ENV)
             creds = register(url, key)
-            print(f"Registered {config.AGENT_NAME} as {creds.agent_id}; saved credentials.")
+            print(f"Registered {config.AGENT_NAME} as agent {creds.agent_id}.")
+            print(f"Its id and API key are saved in {config.CREDENTIALS_PATH}.")
         else:
             asyncio.run(list_rooms() if args.list_rooms else serve())
     except KeyboardInterrupt:
