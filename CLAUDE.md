@@ -239,8 +239,9 @@ bugline/
   `{kind: "bug"|"question"|"request"|"off-topic", missing: [string], report: {title, steps, expected, actual, group_id}}`.
   The duplicate check is a second, separate lite-model call returning
   `{duplicate_of: "BL-n" | null, confidence: number}`; treat confidence under 0.7 as no match.
-- Exponential backoff on HTTP 429 (start 2 s, cap 30 s, 5 tries), then post "I'm rate-limited,
-  trying again shortly" rather than failing silently.
+- Exponential backoff on HTTP 429 (start 2 s, cap 30 s, 5 tries), then post "I'm rate-limited
+  right now. Please send that again in a minute" rather than failing silently. The agent does not
+  retry on its own.
 - Log every model call to `agents/frontdesk/calls.log` (timestamp, model, tokens). We quote these
   numbers in the blog. Target under 25 calls per full loop.
 - Keep agent replies under 10 lines; no chatter; never call the model for a message that does not
