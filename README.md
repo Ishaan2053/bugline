@@ -273,8 +273,8 @@ The day-by-day record is in [docs/build-journal.md](docs/build-journal.md).
 
 ## Built with Wispr Flow
 
-Prompts to the coding agents that built this repo, and the build journal, were dictated with
-Wispr Flow.
+<!-- author: one or two sentences on what you dictated with Wispr Flow (prompts, journal,
+reviews) and what the Insights numbers show -->
 
 <!-- author: add the Wispr Insights scorecard image (docs/wispr-scorecard.png) -->
 
