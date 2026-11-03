@@ -94,7 +94,7 @@ Seeded faults (planted on purpose; do not fix them unless the task explicitly sa
 | # | Fault | User sees | Expected path |
 | --- | --- | --- | --- |
 | 1 | `GET /share/{token}` divides by a member's expense count → `ZeroDivisionError` for a member with none | "Share link gives an error" | frontdesk → reproducer → PM approves → fixer PR → frontdesk closes loop |
-| 2 | Settlement rounds each share with `round(x, 2)` and drops the remainder on 3-way splits | "Totals are off by ₹1" | reproducer shows exact numbers |
+| 2 | Settlement rounds each share with `round(x, 2)` and drops the remainder on 3-way splits | "Settle-up is a paisa short of what we spent" | reproducer shows exact numbers |
 | 3 | Not a bug: expense entered with the wrong payer | "It says I owe money I already paid" | frontdesk answers from the docs, never escalates |
 | 4 | Report with no steps / no group id | vague complaint | frontdesk asks for exactly the missing fields |
 | 5 | Duplicate: a second user reports fault 1 while `BL-1` is open | "Share link broken for me too" | frontdesk matches it to `BL-1`, tells the user it is already tracked, subscribes them; nothing reaches `#eng`; when `BL-1` closes, every subscriber is notified |
@@ -107,7 +107,7 @@ Seeded faults (planted on purpose; do not fix them unless the task explicitly sa
 - `request` → acknowledged and logged locally; not escalated during the hackathon.
 - `off-topic` → one polite line, no further engagement, no model calls on follow-ups in that thread.
 - `bug` with missing fields → ask once for exactly the missing fields; no ticket until complete.
-- `bug`, complete → **duplicate check** before escalating: one `gemini-2.5-flash-lite` call with the
+- `bug`, complete → **duplicate check** before escalating: one lite-model call (see section 6) with the
   titles and summaries of all open tickets, asking whether this is the same problem. Match →
   reply "already tracked as `BL-n`, I'll tell you when it's fixed", add the reporter to that
   ticket's subscribers, post nothing to `#eng`. No match → new ticket, escalate.
@@ -198,29 +198,46 @@ bugline/
   The response returns `id` and `api_key` **once** — persist both. Re-registering the same name
   returns 409; `overwrite: true` issues a new key and breaks the old one. Do not use
   `POST /agents/register-known`.
-- New agents answer only their owner. Call `POST /agents/{id}/ops/update_agent_detail` with
-  `{"agent_id": id, "addressing": "anyone"}` so Telegram users can address the frontdesk.
-- Connect: WebSocket at `/agents/{agent_id}/connection/ws` with `Authorization: Bearer <api_key>`,
-  a connection id (UUID, reused on reconnect) and the rooms to claim. SSE is deprecated.
+- New agents answer only their owner. The agent cannot change this itself (the server refuses
+  `update_agent_detail` on yourself with 403): the owner sets **Who can talk to your agent → Anyone**
+  for `bugline-frontdesk` in Switch Console.
+- Connect: WebSocket at `/agents/{agent_id}/connection/ws` with `Authorization: Bearer <api_key>`;
+  the connection id (UUID, reused on reconnect) and the room go in **query parameters**.
+  **One connection covers one room**, so the frontdesk holds two (support + eng), and each op call
+  carries the `X-Switch-Connection-Id` of the room it acts in. SSE is deprecated.
 - Lifecycle: take `rooms`, `cursor` and `generation` from the `connection_state` frame, not from
   what you requested. Answer every `ping` with a `pong` carrying the cursor. Act on a `message`
-  event **only when `payload.addressed` is true**.
+  event **only when `payload.addressed` is true**. The text is in `payload.body`; there is no
+  mentions list, so ticket ids and PR links are parsed from the body.
 - Operations: discover with `GET /agents/{id}/ops` at startup; invoke with
   `POST /agents/{id}/ops/<name>`, header `X-Switch-Connection-Id`, body = bare arguments.
-  Key ops: `post_message` (with mentions), `send_targeted_message`, `read_context`, room document
-  and reference ops, role ops. Errors: 400 bad args, 403 permission, 404 unknown op, 409 dead
-  connection. Arguments are validated against the function signature, not the published schema.
-- Without a connection, `POST /agents/{id}/message` with `{room_id, content}` posts a message.
-- There is no task protocol: one agent hands work to another by posting a message that mentions it.
+  `post_message(body, thread_id)` posts to the connection's room (no room id, no mentions);
+  `send_targeted_message(body, target_names, target_roles, thread_id)` is how one agent hands work
+  to another and reports whether each target is reachable. Errors: 400 bad args, 403 permission,
+  404 unknown op, 409 dead connection. Arguments are validated against the function signature,
+  not the published schema.
+- Without a connection, `POST /agents/{id}/message` with `{room_id, content}` posts a message
+  (no threading).
+- There is no task protocol: one agent hands work to another with a targeted message.
+- Roles are not access rules. An agent holds one role across all rooms, so `@frontdesk` is a
+  per-room alias (`!set-alias`), not a role. A role mention (`@fixer`) reaches an agent only while
+  its session is live and holds the role. "PM only, in `bugline-eng` only" is a custom access rule
+  the owner sets on `bugline-fixer` in Console; templates only offer `owner`, `owner-agents`,
+  `anyone`. Refusals are posted by Switch, and their wording depends on account linking.
+- Templates can create and link only their own rooms; the Telegram room is adopted by adding the
+  bot, and the custom frontdesk is registered by its own script. `docs/switch-setup.md` lists what
+  is manual.
 - Docs are available to agents over MCP at `https://docs.switchagents.ai/mcp`; use it to check any
   detail above before relying on it.
 
 ## 6. Gemini free tier (Google AI Studio key)
 
-- Default model `gemini-2.5-flash`; use `gemini-2.5-flash-lite` for the frontdesk's classification
-  call so load spreads across two quotas. Structured output via a JSON schema:
+- Default model `gemini-2.5-flash`; use the lite model for the frontdesk's classification
+  call so load spreads across two quotas. The model names live in `agents/frontdesk/config.py`.
+  `gemini-2.5-flash-lite` is closed to new users (404 on Nov 4), so the lite model is
+  `gemini-3.5-flash-lite`. Structured output via a JSON schema:
   `{kind: "bug"|"question"|"request"|"off-topic", missing: [string], report: {title, steps, expected, actual, group_id}}`.
-  The duplicate check is a second, separate `flash-lite` call returning
+  The duplicate check is a second, separate lite-model call returning
   `{duplicate_of: "BL-n" | null, confidence: number}`; treat confidence under 0.7 as no match.
 - Exponential backoff on HTTP 429 (start 2 s, cap 30 s, 5 tries), then post "I'm rate-limited,
   trying again shortly" rather than failing silently.
@@ -287,14 +304,14 @@ clone and are on video.
 - [ ] Register for the hackathon; star `sandbox-quantum/switch`; join the WeMakeDevs Discord
 - [ ] Ask in Discord: judging weights? one project in two tracks? video length limit? submission form?
 - [ ] Start Wispr Flow Pro via the WEMAKEDEVS promo; confirm Insights records
-- [ ] Create public repo `bugline` (MIT); commit this file and `AGENTS.md` on `docs/bootstrap`,
+- [x] Create repo `bugline` (MIT; private until submission, flip to public before Nov 7); commit this file and `AGENTS.md` on `docs/bootstrap`,
       open the first PR, squash-merge it
-- [ ] Protect `main`: require a PR, allow squash merge only, delete branches on merge; create the
+- [x] Protect `main`: require a PR, allow squash merge only, delete branches on merge; create the
       labels `demo-app`, `frontdesk`, `switch-config`, `docs`, `infra`, `hackathon`
 - [ ] Install the Context7 MCP in Claude Code / OpenCode and confirm it returns docs for FastAPI
-- [ ] Check newest releases of Python, FastAPI, pytest, httpx, websockets, `google-genai`, ruff and
+- [x] Check newest releases of Python, FastAPI, pytest, httpx, websockets, `google-genai`, ruff and
       the Docker base image; note them in `docs/build-journal.md`
-- [ ] Docker Desktop (WSL2) works: `docker run hello-world`
+- [x] Docker Desktop (WSL2) works: `docker run hello-world`
 - [ ] Install latest stable Switch Console for Windows; start a local server; bundled Mattermost up
 - [ ] Decide the coding-agent provider: if the Claude subscription includes Claude Code, sign in
       and prefer it; otherwise install OpenCode, configure Google provider with the AI Studio key
@@ -312,9 +329,9 @@ clone and are on video.
 
 ### Day 1 — Nov 4 (demo app + eng room + reproducer)
 
-- [ ] `demo-app/` endpoints, seed, Dockerfile, compose; faults 1 and 2 planted; 6–8 passing tests
+- [x] `demo-app/` endpoints, seed, Dockerfile, compose; faults 1 and 2 planted; 6–8 passing tests
 - [ ] Fresh clone: `docker compose up` + `curl` works
-- [ ] PR `demo-app: expense splitter with seeded faults` squash-merged to `main`; this is the
+- [x] PR `demo-app: expense splitter with seeded faults` squash-merged to `main`; this is the
       repo the room references
 - [ ] Room `bugline-eng` on Slack; room instructions set; repo registered as reference
 - [ ] Documents `intake-rules.md`, `repro-checklist.md`, `fix-policy.md` attached
@@ -418,7 +435,8 @@ Never cut: cross-app handoff, refusal moment, loop closing back to the reporter,
   https://github.com/sandbox-quantum/switch/blob/main/examples/agent-templates/triage-pair.template.yaml
 - Chat commands: `!roles` · `!set-alias` · `!follow-ups off` · `!reset`
 
-Unverified as of Nov 3 (test before relying on): Console early-access build on Windows; OpenCode
+Unverified as of Nov 4 (test before relying on): Console early-access build on Windows; OpenCode
 with Google as provider inside Console; whether Claude Code is available on the current
-subscription; template schema support for links and custom agents; exact free-tier limits for
-`gemini-2.5-flash` and `gemini-2.5-flash-lite` on this project.
+subscription; how long a managed agent's session (and so its role) stays live; refusal wording for an
+unlinked Slack user; exact free-tier limits for
+`gemini-2.5-flash` and `gemini-3.5-flash-lite` on this project.
