@@ -331,7 +331,7 @@ clone and are on video.
 ### Day 1 — Nov 4 (demo app + eng room + reproducer)
 
 - [x] `demo-app/` endpoints, seed, Dockerfile, compose; faults 1 and 2 planted; 6–8 passing tests
-- [ ] Fresh clone: `docker compose up` + `curl` works
+- [x] Fresh clone: `docker compose up` + `curl` works
 - [x] PR `demo-app: expense splitter with seeded faults` squash-merged to `main`; this is the
       repo the room references
 - [ ] Room `bugline-eng` on Slack; room instructions set; repo registered as reference
