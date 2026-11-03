@@ -1,4 +1,5 @@
-# Bugline services. Run `docker compose up --build` from the repo root.
+# Bugline services. Run `docker compose up --build` from the repo root for the demo app.
+# The front desk agent is in the `agents` profile: `docker compose --profile agents up --build`.
 name: bugline
 
 services:
@@ -6,3 +7,23 @@ services:
     build: ./demo-app
     ports:
       - "8000:8000"
+
+  frontdesk:
+    build: ./agents/frontdesk
+    profiles: [agents]
+    env_file: agents/frontdesk/.env
+    environment:
+      # Reference docs the prompts read, mounted read-only below.
+      FRONTDESK_INTAKE_RULES: /refs/switch-docs/intake-rules.md
+      FRONTDESK_USER_FAQ: /refs/demo-app-README.md
+      FRONTDESK_CALLS_LOG: state/calls.log
+    volumes:
+      - frontdesk-state:/app/state
+      - ./switch/docs:/refs/switch-docs:ro
+      - ./demo-app/README.md:/refs/demo-app-README.md:ro
+    # Lets SWITCH_API_URL=http://host.docker.internal:<port> reach a Switch server on this machine.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  frontdesk-state:

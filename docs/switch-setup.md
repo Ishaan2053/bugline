@@ -99,10 +99,11 @@ its address bar gives the Gateway's host and port, which is usually not the brid
 1. Gateway → **API Keys** → **Create Registration Key**, label `bugline-frontdesk`. You own every
    agent registered with it, which is what lets the reproducer accept the front desk as "my
    agent". Do not use the server's bootstrap `AGENT_REGISTRATION_TOKEN`.
-2. Register once and keep the id and API key it prints; they are shown only once. Running
-   `--register` again for the same name fails with 409. Full details and environment variables:
-   [agents/frontdesk/README.md](../agents/frontdesk/README.md) **(unverified: command names are
-   final only once that README lands)**.
+2. Register once. The server returns the id and API key only once; `--register` saves both to
+   `agents/frontdesk/state/credentials.json` (gitignored) and refuses to run if that file exists.
+   Copy the two values into `scripts/.env` if you use `setup_rooms.py`. Registering the same name
+   again fails with 409. Full details and environment variables:
+   [agents/frontdesk/README.md](../agents/frontdesk/README.md).
 
    PowerShell:
 

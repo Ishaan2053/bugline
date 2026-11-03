@@ -61,12 +61,15 @@ def test_cooldown_uses_store_clock() -> None:
 
 
 def test_close_notifies_reporter_and_subscribers_once(store: Store) -> None:
-    ticket_id = new_ticket(store, reporter="u1")
-    store.subscribe(ticket_id, "u2", "support")
-    store.subscribe(ticket_id, "u2", "support")
+    ticket_id = store.open_ticket("u1", "Asha", "support", "Share link", "500", {}, thread_id="m1")
+    store.subscribe(ticket_id, "u2", "support", "Ravi", "m2")
+    store.subscribe(ticket_id, "u2", "support", "Ravi", "m3")
     store.subscribe(ticket_id, "u1", "support")  # the reporter is already subscribed
     notify = store.close_ticket(ticket_id, "https://example.test/pr/7")
-    assert notify == [Subscriber("u1", "support"), Subscriber("u2", "support")]
+    assert notify == [
+        Subscriber("u1", "support", "Asha", "m1"),
+        Subscriber("u2", "support", "Ravi", "m2"),
+    ]
     ticket = store.get_ticket(ticket_id)
     assert ticket is not None
     assert ticket.status == "closed"

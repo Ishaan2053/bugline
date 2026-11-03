@@ -42,7 +42,8 @@ front desk replies with the short line from CLAUDE.md and does not call the mode
   `https://github.com/.../pull/<number>` link (format in `switch/docs/fix-policy.md`, "What to
   post when done"). Close that ticket and post in `bugline-support` that `BL-<n>` is fixed, with
   the PR link, for the reporter and every subscriber.
-- Ignore everything else in this room. The front desk never instructs the fixer.
+- Any other message that addresses it gets one line saying what it does here, and nothing more.
+  The front desk never instructs the fixer.
 
 ## Never
 
