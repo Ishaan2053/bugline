@@ -1,0 +1,8 @@
+# Bugline services. Run `docker compose up --build` from the repo root.
+name: bugline
+
+services:
+  demo-app:
+    build: ./demo-app
+    ports:
+      - "8000:8000"

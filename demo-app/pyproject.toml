@@ -1,0 +1,13 @@
+[project]
+name = "bugline-demo-app"
+version = "0.1.0"
+description = "Expense splitter used as the demo codebase for Bugline"
+requires-python = ">=3.14"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
