@@ -245,7 +245,7 @@ desk, with the id and key from step 5. Every call is listed in the script's docs
 PowerShell:
 
 ```powershell
-Copy-Item scripts\.env.example scripts\.env   # fill in SWITCH_API_URL, FRONTDESK_AGENT_ID, FRONTDESK_API_KEY
+Copy-Item scripts\.env.example scripts\.env   # optional: it falls back to agents/frontdesk/.env and the saved credentials
 py -3.14 scripts\setup_rooms.py --dry-run
 py -3.14 scripts\setup_rooms.py
 ```

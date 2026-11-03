@@ -18,7 +18,8 @@ It only calls operations that take a room id. Operations bound to a connection's
 WebSocket claiming that room, which would take it away from the running front desk. So roles and
 room documents are not made here; docs/switch-setup.md covers them.
 
-Settings come from environment variables, or from scripts/.env (see scripts/.env.example).
+Settings come from environment variables, then scripts/.env (see scripts/.env.example), then
+agents/frontdesk/.env. The agent id and API key default to the ones `agent.py --register` saved.
 `--dry-run` prints every call and sends nothing. Only the standard library is used.
 
 Written from the Switch docs and the server 0.31 source; not yet run against a live server.
@@ -44,6 +45,9 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = Path(__file__).resolve().parent / ".env"
+# The front desk's own settings and saved credentials, so they are not copied into scripts/.env.
+FRONTDESK_ENV_FILE = REPO_ROOT / "agents" / "frontdesk" / ".env"
+FRONTDESK_CREDENTIALS = REPO_ROOT / "agents" / "frontdesk" / "state" / "credentials.json"
 
 FRONTDESK = "bugline-frontdesk"
 FRONTDESK_ALIAS = "frontdesk"
@@ -283,14 +287,24 @@ def run(sw: Switch, settings: Settings) -> None:
 
 
 def load_env_file(path: Path) -> None:
-    """Read KEY=VALUE lines into the environment, without overriding variables already set."""
+    """Read KEY=VALUE lines into the environment. Empty values and variables already set are
+    skipped, so a later file can still fill them."""
     if not path.exists():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip())
+            if value.strip():
+                os.environ.setdefault(key.strip(), value.strip())
+
+
+def load_saved_credentials(path: Path) -> None:
+    """Use the front desk's saved id and API key unless the environment already has them."""
+    if path.exists():
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        os.environ.setdefault("FRONTDESK_AGENT_ID", saved["id"])
+        os.environ.setdefault("FRONTDESK_API_KEY", saved["api_key"])
 
 
 def read_settings(dry_run: bool) -> Settings:
@@ -319,6 +333,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="print every call, send nothing")
     args = parser.parse_args()
     load_env_file(ENV_FILE)
+    load_env_file(FRONTDESK_ENV_FILE)
+    load_saved_credentials(FRONTDESK_CREDENTIALS)
     try:
         settings = read_settings(args.dry_run)
         if args.dry_run:
