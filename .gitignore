@@ -1,0 +1,23 @@
+# secrets
+.env
+*.env
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# runtime data
+*.db
+*.sqlite3
+calls.log
+agents/frontdesk/state/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
