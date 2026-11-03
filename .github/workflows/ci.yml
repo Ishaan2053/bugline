@@ -1,0 +1,26 @@
+# Runs the tests and ruff for both Python projects on every PR and on main.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [demo-app, agents/frontdesk]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.14.7"
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: ruff format --check .
+      - run: ruff check .
+      - run: pytest -q
