@@ -19,9 +19,12 @@ from common.conventions import (  # noqa: F401
     format_ticket_id,
 )
 from common.env import load_env_file, require_env
+from common.project import load_project
 
 AGENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = AGENT_DIR.parent.parent
+# The project the front desk takes reports for (bugline.toml): names, report fields, user guide.
+PROJECT = load_project()
 
 
 def _path_from_env(var: str, default: Path) -> Path:
@@ -70,7 +73,7 @@ STATUS_MAX_ROWS = REPLY_MAX_LINES - 2
 
 
 # --- Switch (CLAUDE.md section 5) ---------------------------------------------------------------
-AGENT_NAME = "bugline-frontdesk"
+AGENT_NAME = PROJECT.agents["frontdesk"]
 AGENT_DESCRIPTION = (
     "Bugline front desk: takes reports in the support chat, hands complete bugs to engineering"
     " and tells the reporter when they are fixed."
@@ -81,13 +84,14 @@ REGISTRATION_KEY_ENV = "SWITCH_REGISTRATION_KEY"
 # Room keys used in the code, the Switch room each one is, and the env var with its room id.
 ROOM_SUPPORT = "support"
 ROOM_ENG = "eng"
-ROOM_NAMES = {ROOM_SUPPORT: "bugline-support", ROOM_ENG: "bugline-eng"}
+ROOM_NAMES = {key: PROJECT.rooms[key] for key in (ROOM_SUPPORT, ROOM_ENG)}
 ROOM_ID_ENVS = {ROOM_SUPPORT: "SWITCH_SUPPORT_ROOM_ID", ROOM_ENG: "SWITCH_ENG_ROOM_ID"}
 # The chat app each room is on, as Switch names its connection types ("bridge_type"). Only
-# scripts/bootstrap.py reads it, to pick the connection; its flags override these.
+# scripts/bootstrap.py reads it, to pick the connection. bugline.toml gives the default, these
+# env vars override it, and bootstrap's flags override both.
+BRIDGE_ENVS = {ROOM_SUPPORT: "BUGLINE_SUPPORT_BRIDGE", ROOM_ENG: "BUGLINE_ENG_BRIDGE"}
 BRIDGE_TYPES = {
-    ROOM_SUPPORT: os.environ.get("BUGLINE_SUPPORT_BRIDGE", "telegram"),
-    ROOM_ENG: os.environ.get("BUGLINE_ENG_BRIDGE", "slack"),
+    key: os.environ.get(env) or PROJECT.bridges[key] for key, env in BRIDGE_ENVS.items()
 }
 
 # Optional agent name targeted alongside the role. A role mention reaches an agent only while its
@@ -122,4 +126,4 @@ PROMPTS_DIR = AGENT_DIR / "prompts"
 INTAKE_RULES_PATH = _path_from_env(
     "FRONTDESK_INTAKE_RULES", REPO_ROOT / "switch" / "docs" / "intake-rules.md"
 )
-USER_FAQ_PATH = _path_from_env("FRONTDESK_USER_FAQ", REPO_ROOT / "demo-app" / "README.md")
+USER_FAQ_PATH = _path_from_env("FRONTDESK_USER_FAQ", PROJECT.user_guide_path)

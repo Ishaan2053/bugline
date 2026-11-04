@@ -117,7 +117,7 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
         msg.sender_name,
         msg.room_id,
         report.title,
-        report.actual,
+        getattr(report, config.PROJECT.summary_field),  # what the duplicate check reads
         asdict(report),
         thread_id=msg.thread_root,
     )

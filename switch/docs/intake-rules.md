@@ -1,12 +1,12 @@
 # Intake rules
 
-These rules say how the front desk sorts messages in `bugline-support` and when a bug report is
+These rules say how the front desk sorts messages in `$support_room` and when a bug report is
 complete. The front desk reads this file at runtime and gives it to the model, so it is both the
-rulebook for people and the input for the classifier. Change the rules here and nowhere else.
+rulebook for people and the input for the classifier. Change the rules here and nowhere else. The
+app's description, the room names and the report fields come from `bugline.toml`.
 
-The app is an expense splitter. People make a group, add members, add expenses, see balances,
-settle up, and share a read-only summary of the group by link. How the app is meant to behave is
-in the user guide, `demo-app/README.md`.
+The front desk serves the users of $product. $about How the app is meant to behave is in the user
+guide, `$user_guide`.
 
 ## Four kinds of message
 
@@ -37,23 +37,12 @@ behaviour, it is a question. If the guide says the app should do something else,
 
 ## A complete bug report
 
-A bug report is complete when it has all five fields. The front desk does not open a ticket until
-it is complete.
+A bug report is complete when it has every field below that is not marked optional. The front
+desk does not open a ticket until it is complete.
 
-| Field | What it holds | Example |
-| --- | --- | --- |
-| `title` | Under 10 plain words, written by the front desk, not asked for | Share link returns an error |
-| `steps` | What the person did, in order: which page, link or action, with the amounts or names involved. One step is enough when there was one action | Opened the group's share link |
-| `expected` | What the person thought would happen | A summary of who paid what |
-| `actual` | What happened instead: the error text, the status code, or the wrong numbers | "Internal Server Error" |
-| `group_id` | Which group: its number (the seeded group is `1`) or its share link or token (`goa-trip-share`). Either one identifies the group | 1 |
+$report_fields
 
-Rules for the fields:
-- Take only what the person wrote. Never invent steps, amounts, names or ids.
-- `expected` can be implied: "the share link gives an error" implies the person expected the
-  summary to open. Fill it in plain words when the meaning is clear.
-- `group_id` is never implied. If the person did not give a group number, share link or token, it
-  is missing.
+Take only what the person wrote. Never invent steps, amounts, names or ids.
 
 ## Asking for missing fields
 
@@ -68,18 +57,15 @@ feature failing in the same way is a duplicate, whoever reports it and whatever 
 A duplicate is not handed over again. The person is told the existing ticket id and is told when it
 is fixed.
 
-## Handing a bug to `bugline-eng`
+## Handing a bug to `$eng_room`
 
-A complete, new bug gets the next ticket id (`BL-1`, `BL-2`, ...) and is posted in `bugline-eng`
+A complete, new bug gets the next ticket id (`$ticket_prefix-1`, `$ticket_prefix-2`, ...) and is posted in `$eng_room`
 in this exact shape, one field per line:
 
 ```
-BL-<n>: <title>
-Reporter: <name> (bugline-support)
-Group: <group_id>
-Steps: <steps>
-Expected: <expected>
-Actual: <actual>
+$ticket_prefix-<n>: <title>
+Reporter: <name> ($support_room)
+$report_lines
 @reproducer please reproduce and post your verdict in this thread.
 ```
 
@@ -87,7 +73,7 @@ Everything about that ticket happens in the thread under this message.
 
 ## What is never handed over
 
-- Questions: answered in `bugline-support` from the user guide.
+- Questions: answered in `$support_room` from the user guide.
 - Requests: acknowledged and logged. Not handed over.
 - Off-topic messages: one polite line, then nothing more in that thread.
 - Incomplete bugs: the front desk asks for the missing fields first.

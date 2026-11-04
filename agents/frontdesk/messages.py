@@ -5,12 +5,14 @@ change them here and there together.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict
 from datetime import datetime
 
 from classify import Report
 from config import (
     MAX_OPEN_TICKETS,
     PR_URL_RE,
+    PROJECT,
     REPRODUCER_ROLE,
     ROOM_NAMES,
     ROOM_SUPPORT,
@@ -19,14 +21,8 @@ from config import (
 )
 from store import Subscriber, Ticket
 
-# What each report field is called when the front desk asks for it.
-FIELD_LABELS = {
-    "title": "a one-line summary",
-    "steps": "the steps you took",
-    "expected": "what you expected to happen",
-    "actual": "what happened instead",
-    "group_id": "your group id",
-}
+# What each report field is called when the front desk asks for it (bugline.toml, `label`).
+FIELD_LABELS = {f.name: f.label for f in PROJECT.fields}
 
 # --- support room ---------------------------------------------------------------------------
 TOO_MANY_OPEN = (
@@ -73,7 +69,7 @@ def escalation(ticket_id: str, report: Report, reporter_name: str) -> str:
         [
             f"{ticket_id}: {_one_line(report.title)}",
             f"Reporter: {reporter_name} ({ROOM_NAMES[ROOM_SUPPORT]})",
-            *_report_lines(report),
+            *_report_lines(asdict(report)),
             f"@{REPRODUCER_ROLE} please reproduce and post your verdict in this thread.",
         ]
     )
@@ -119,19 +115,18 @@ def status_one(ticket: Ticket, subscribers: Sequence[Subscriber], now: datetime)
             f"{ticket.ticket_id}: {_one_line(ticket.title)}",
             f"Status: {state}",
             f"Subscribers: {', '.join(names)}",
-            *_report_lines(Report(**ticket.report)),
+            *_report_lines(ticket.report),
             times,
         ]
     )
 
 
-def _report_lines(report: Report) -> list[str]:
-    """The report fields the escalation and the single-ticket status both show."""
+def _report_lines(report: Mapping[str, str]) -> list[str]:
+    """The report fields the escalation and the single-ticket status both show, one per line, in
+    the order bugline.toml lists them (`Group: 1`). The title is the first line, so it is not here.
+    """
     return [
-        f"Group: {_one_line(report.group_id)}",
-        f"Steps: {_one_line(report.steps)}",
-        f"Expected: {_one_line(report.expected)}",
-        f"Actual: {_one_line(report.actual)}",
+        f"{f.heading}: {_one_line(str(report.get(f.name) or ''))}" for f in PROJECT.ticket_fields()
     ]
 
 
