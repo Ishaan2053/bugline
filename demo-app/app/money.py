@@ -6,9 +6,16 @@ Amounts are rupees as floats, kept to two decimal places (paisa).
 
 
 def split_equal(amount: float, member_ids: list[int]) -> dict[int, float]:
-    """Everyone in the group owes the same part of the expense."""
-    share = round(amount / len(member_ids), 2)
-    return {member_id: share for member_id in member_ids}
+    """Everyone in the group owes the same part of the expense.
+
+    Works in whole paisa; when the amount does not divide evenly, the first members in the list
+    each owe one paisa more, so the shares always add up to the amount.
+    """
+    base, leftover = divmod(round(amount * 100), len(member_ids))
+    return {
+        member_id: (base + (1 if index < leftover else 0)) / 100
+        for index, member_id in enumerate(member_ids)
+    }
 
 
 def split_by_shares(amount: float, shares: dict[int, int]) -> dict[int, float]:
