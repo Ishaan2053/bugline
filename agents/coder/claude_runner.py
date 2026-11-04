@@ -48,7 +48,7 @@ def claude_command(settings: config.Settings, claude_path: str) -> list[str]:
         "--allowedTools",
         *settings.allowed_tools,
         "--disallowedTools",
-        *config.DENIED,
+        *settings.denied_tools,
     ]
 
 

@@ -19,4 +19,5 @@ def settings(tmp_path: Path) -> config.Settings:
         brief=brief,
         workdir=tmp_path,
         allowed_tools=role.allowed,
+        denied_tools=role.denied,
     )

@@ -24,10 +24,14 @@ def test_command_appends_the_brief_and_allows_only_the_roles_tools(settings) -> 
     assert cmd[cmd.index("--append-system-prompt-file") + 1] == str(settings.brief)
     assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
     allowed = cmd[cmd.index("--allowedTools") + 1 : cmd.index("--disallowedTools")]
-    assert "Bash(git push *)" not in allowed and "Bash(gh pr create *)" not in allowed
-    assert "Edit(demo-app/scratch/**)" in allowed
-    assert "Bash(git push *)" in config.ROLES["fixer"].allowed
-    assert "Bash(gh pr merge *)" in cmd[cmd.index("--disallowedTools") + 1 :]
+    denied = cmd[cmd.index("--disallowedTools") + 1 :]
+    assert "Bash" in allowed and "Edit(demo-app/scratch/**)" in allowed
+    assert "Edit(**)" not in allowed
+    # The reproducer never changes the repo; both roles are refused the dangerous git commands.
+    assert {"Bash(git push*)", "Bash(git commit*)", "Bash(gh *)"} <= set(denied)
+    assert "Bash(gh pr merge *)" in denied
+    fixer = config.ROLES["fixer"]
+    assert "Edit(**)" in fixer.allowed and "Bash(git push*)" not in fixer.denied
 
 
 def test_prompt_has_sender_message_and_thread(settings) -> None:
