@@ -51,6 +51,7 @@ from common.env import read_env_file  # noqa: E402
 from common.switch_client import Credentials, OpError, load_credentials, register  # noqa: E402
 
 TEMPLATE = REPO_ROOT / "switch" / "bugline.template.yaml"
+APP_DIR = "demo-app"  # in the repo and in each coder's clone: the app, its tests and its venv
 INSTRUCTIONS = {
     key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for key in ("support", "eng")
 }
@@ -120,9 +121,16 @@ def _load(name: str, path: Path) -> ModuleType:
     return module
 
 
+def load_agent_configs() -> tuple[ModuleType, ModuleType]:
+    """The front desk's and the coders' config modules, for scripts that need more than Layout."""
+    return (
+        _load("frontdesk_config", AGENTS_DIR / "frontdesk" / "config.py"),
+        _load("coder_config", AGENTS_DIR / "coder" / "config.py"),
+    )
+
+
 def load_layout() -> Layout:
-    frontdesk = _load("frontdesk_config", AGENTS_DIR / "frontdesk" / "config.py")
-    coder = _load("coder_config", AGENTS_DIR / "coder" / "config.py")
+    frontdesk, coder = load_agent_configs()
     coders = [coder.settings(role) for role in ("reproducer", "fixer")]
     return Layout(
         agents=(
@@ -373,13 +381,21 @@ def ensure_members(gw: Gateway, room: str, room_id: str, agent_ids: dict[str, st
         say(f"{name} in {room}", gw.done("added") if name in missing else "exists")
 
 
-def ensure_access_rules(gw: Gateway, layout: Layout, ids: dict[str, str], eng_id: str) -> None:
+def expected_policies(eng_id: str) -> dict[str, tuple[dict | None, str]]:
+    """Role -> (the addressing policy the Gateway should hold, a label for it).
+
+    scripts/doctor.py compares the live rules against the same table.
+    """
     fixer_rule = {**OWNER_RULE, "rooms": [eng_id], "owner_agents": False}
-    wanted = {
+    return {
         "frontdesk": (None, "anyone"),
         "reproducer": ({"rules": [OWNER_RULE]}, "the owner and the owner's agents"),
         "fixer": ({"rules": [fixer_rule]}, "the owner only, in bugline-eng only"),
     }
+
+
+def ensure_access_rules(gw: Gateway, layout: Layout, ids: dict[str, str], eng_id: str) -> None:
+    wanted = expected_policies(eng_id)
     current = {agent["id"]: agent.get("addressing_policy") for agent in gw.get("/agents")}
     for spec in layout.agents:
         policy, label = wanted[spec.role]

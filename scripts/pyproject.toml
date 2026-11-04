@@ -7,6 +7,11 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.isort]
+# `common` is in agents/, which bootstrap.py puts on sys.path when it is imported. As first party,
+# `from common...` sorts after `from bootstrap...`, so the path is set before it is needed.
+known-first-party = ["common"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]  # bootstrap.py puts agents/ on the path itself, for `common`
 testpaths = ["tests"]

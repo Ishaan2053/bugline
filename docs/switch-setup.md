@@ -251,6 +251,14 @@ Expect a PR, then "BL-2 is fixed" in `bugline-support` for both the reporter and
 
 ## Troubleshooting
 
+- **Run doctor first.** `agents\frontdesk\.venv\Scripts\python scripts\doctor.py` checks the
+  server, both bridges, both rooms, which agents are connected, each agent's key, who holds
+  `reproducer` and `fixer`, the access rules, `claude`, `gh`, `git` and the two clones. It only
+  reads. Each FAIL line says what to do. A bridge that is not `active` means: restart the server
+  in Switch Console; never disconnect the app.
+- **Start a take from `BL-1`.** Stop the agents and run `scripts\reset_demo.py --dry-run`, then
+  without `--dry-run`. It refuses while any agent is connected, and it never touches
+  `credentials.json` or `connections.json`.
 - **Which URL is the server?** Console picks the ports when it starts the server and writes them
   to `%APPDATA%\switchdash\local-switch-server\ports.json`, for example
   `{"gateway": 50072, "api": 50073, ...}`. The API (the "bridge") is `api`:
