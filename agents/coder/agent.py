@@ -20,6 +20,7 @@ import logging
 import shutil
 import sys
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -48,7 +49,14 @@ from common.switch_client import (
 )
 
 import config
-from claude_runner import ClaudeResult, build_prompt, claude_command, run_claude, trim_reply
+from claude_runner import (
+    ClaudeResult,
+    build_prompt,
+    claude_command,
+    run_claude,
+    trim_reply,
+    write_brief,
+)
 
 log = logging.getLogger("coder")
 
@@ -211,6 +219,9 @@ async def serve(settings: config.Settings) -> None:
         raise RuntimeError(f"brief {settings.brief} not found; set CODER_BRIEF")
     if not settings.clone.is_dir():
         raise RuntimeError(f"{settings.clone} not found; clone the repo there (see README.md)")
+    # From here on Claude Code reads the rendered copy, with the project's names filled in.
+    settings = replace(settings, brief=write_brief(settings))
+    log.info("brief rendered for %s into %s", config.PROJECT.name, settings.brief)
 
     base_url = config.switch_api_url()
     creds = load_credentials(settings.credentials_path)

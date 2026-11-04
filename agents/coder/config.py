@@ -1,8 +1,9 @@
-"""Settings for the coder agent, one program that runs as `bugline-repro` or `bugline-fixer`.
+"""Settings for the coder agent, one program that runs as the reproducer or the fixer.
 
 `CODER_ROLE` picks the role. The agent name, brief and working directory default from the role
-and can each be overridden by an environment variable. What Claude Code may do in each role (its
-tool permissions) is defined here too, so the README and the code describe the same thing.
+and bugline.toml, and can each be overridden by an environment variable. What Claude Code may do
+in each role (its tool permissions) is defined here too, so the README and the code describe the
+same thing.
 """
 
 import os
@@ -12,9 +13,14 @@ from pathlib import Path
 
 from common.conventions import FIXER_ROLE, REPRODUCER_ROLE
 from common.env import load_env_file, require_env
+from common.project import load_project
 
 AGENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = AGENT_DIR.parent.parent
+DOCS_DIR = REPO_ROOT / "switch" / "docs"
+BRIEFS_DIR = REPO_ROOT / "switch" / "agent-briefs"
+# The project the coders clone, test and fix (bugline.toml): agent names, clone dir, paths.
+PROJECT = load_project()
 
 load_env_file(AGENT_DIR / ".env")
 
@@ -56,10 +62,10 @@ THREAD_READ_LIMIT = 100  # timeline entries read when looking for the message's 
 # Git Bash. Anything not allowed below is refused without a prompt (--permission-mode dontAsk).
 TOOLS = ("Read", "Glob", "Grep", "Edit", "Write", "Bash")
 
-# Claude Code runs inside the agent's clone (<workdir>/bugline), so paths below are relative to
-# the repo root.
+# Claude Code runs inside the agent's clone (<workdir>/<clone_dir>), so paths below are relative to
+# the repo root. The paths and the default branch come from bugline.toml.
 #
-# Both roles may run any shell command. Claude Code chains commands (`cd demo-app && ... | tail`)
+# Both roles may run any shell command. Claude Code chains commands (`cd <app> && ... | tail`)
 # and in dontAsk mode every part of a chain must be allowed, so a list of single commands refused
 # almost every real step in the first live run. The deny lists below are what keeps each agent in
 # its lane; deny rules win over "Bash".
@@ -68,8 +74,8 @@ _READ_AND_RUN = ("Read", "Glob", "Grep", "Bash")
 # The reproducer writes only scratch scripts (switch/docs/repro-checklist.md).
 REPRODUCER_ALLOWED = (
     *_READ_AND_RUN,
-    "Edit(demo-app/scratch/**)",
-    "Write(demo-app/scratch/**)",
+    f"Edit({PROJECT.scratch_dir}/**)",
+    f"Write({PROJECT.scratch_dir}/**)",
 )
 
 # The fixer edits the clone, commits, pushes its branch and opens the PR
@@ -93,13 +99,12 @@ DENIED = (
     "Bash(git push *--force*)",
     "Bash(git push -f*)",
     "Bash(git push * -f*)",
-    "Bash(git push * main*)",
+    f"Bash(git push * {PROJECT.default_branch}*)",
     "Bash(git branch -d *)",
     "Bash(git branch -D *)",
     "Bash(git reset --hard*)",
     "Bash(gh pr merge *)",
-    "Edit(demo-app/seed.py)",
-    "Edit(**/*.db)",
+    *(f"Edit({path})" for path in PROJECT.protected_paths),
 )
 
 
@@ -110,22 +115,26 @@ class Role:
     brief: str  # file name in switch/agent-briefs/
     allowed: tuple[str, ...]
     denied: tuple[str, ...]
+    # Files in switch/docs/ added to the brief, so the agent has them in any repo it works on.
+    docs: tuple[str, ...] = ()
 
 
 ROLES = {
     REPRODUCER_ROLE: Role(
-        "bugline-repro",
+        PROJECT.agents[REPRODUCER_ROLE],
         "Bugline reproducer: runs Claude Code to reproduce a ticket and posts the verdict.",
         "reproducer.md",
         REPRODUCER_ALLOWED,
         (*REPRODUCER_DENIED, *DENIED),
+        ("repro-checklist.md",),
     ),
     FIXER_ROLE: Role(
-        "bugline-fixer",
+        PROJECT.agents[FIXER_ROLE],
         "Bugline fixer: runs Claude Code to fix an approved ticket and opens the pull request.",
         "fixer.md",
         FIXER_ALLOWED,
         DENIED,
+        ("fix-policy.md", "repro-checklist.md"),  # the policy points to the checklist's setup
     ),
 }
 
@@ -144,15 +153,21 @@ class Settings:
     claude_bin: str = "claude"
     timeout_s: float = DEFAULT_TIMEOUT_S
     frontdesk_name: str = ""  # FRONTDESK_AGENT_NAME; "" when bootstrap has not written it
+    docs: tuple[Path, ...] = ()  # documents added to the brief when it is rendered
 
     @property
     def clone(self) -> Path:
-        """The agent's clone of the repo, where Claude Code runs."""
-        return self.workdir / "bugline"
+        """The agent's clone of the project's repo, where Claude Code runs."""
+        return self.workdir / PROJECT.clone_dir
 
     @property
     def state_dir(self) -> Path:
         return STATE_ROOT / self.agent_name
+
+    @property
+    def rendered_brief(self) -> Path:
+        """The brief with the project's names filled in, written at start (claude_runner)."""
+        return self.state_dir / "brief.md"
 
     @property
     def credentials_path(self) -> Path:
@@ -177,14 +192,28 @@ def settings(role_name: str | None = None) -> Settings:
         role=role_name,
         agent_name=name,
         description=role.description,
-        brief=_path("CODER_BRIEF", REPO_ROOT / "switch" / "agent-briefs" / role.brief),
+        brief=_path("CODER_BRIEF", BRIEFS_DIR / role.brief),
         workdir=_path("CODER_WORKDIR", default_workdir(name)),
         allowed_tools=role.allowed,
         denied_tools=role.denied,
         claude_bin=os.environ.get("CODER_CLAUDE_BIN") or "claude",
         timeout_s=float(os.environ.get("CODER_TIMEOUT_S") or DEFAULT_TIMEOUT_S),
         frontdesk_name=os.environ.get(FRONTDESK_AGENT_NAME_ENV, ""),
+        docs=tuple(DOCS_DIR / doc for doc in role.docs),
     )
+
+
+def doc_values(current: Settings | None = None) -> dict[str, str]:
+    """Each coder's working directory and clone, for the $placeholders in switch/ documents
+    ($reproducer_workdir, $fixer_clone, ...). `current` is the running agent, whose own
+    overrides win; scripts/bootstrap.py renders the room documents with the defaults.
+    """
+    values = {}
+    for role in ROLES:
+        one = current if current is not None and current.role == role else settings(role)
+        values[f"{role}_workdir"] = str(one.workdir)
+        values[f"{role}_clone"] = str(one.clone)
+    return values
 
 
 def switch_api_url() -> str:
