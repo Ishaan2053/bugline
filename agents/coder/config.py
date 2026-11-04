@@ -146,9 +146,12 @@ class Settings:
         return self.state_dir / "connections.json"  # the stable connection id
 
 
-def settings() -> Settings:
-    """The settings for the role named in CODER_ROLE."""
-    role_name = require_env("CODER_ROLE")
+def settings(role_name: str | None = None) -> Settings:
+    """The settings for `role_name`, or for the role named in CODER_ROLE.
+
+    scripts/bootstrap.py passes the role to set up both agents from one process.
+    """
+    role_name = role_name or require_env("CODER_ROLE")
     if role_name not in ROLES:
         raise RuntimeError(f"CODER_ROLE must be one of {sorted(ROLES)}, not {role_name!r}")
     role = ROLES[role_name]
