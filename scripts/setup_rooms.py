@@ -179,16 +179,23 @@ def find_rooms(sw: Switch, wanted: dict[str, str]) -> dict[str, str]:
     rooms = _items(result, "rooms")
     found = {}
     for key, value in wanted.items():
-        matches = [room for room in rooms if value in (room.get("id"), room.get("name"))]
+        matches = [room for room in rooms if _room_matches(room, value)]
         if len(matches) != 1:
             names = ", ".join(str(room.get("name")) for room in rooms) or "none"
             raise SwitchError(
                 f"{len(matches)} rooms match {value!r}; the front desk is in: {names}. "
                 "Invite the front desk to the room, or put the room id in scripts/.env."
             )
-        found[key] = matches[0]["id"]
+        found[key] = matches[0]["room_id"]
         print(f"    {key}: {value} is {found[key]}")
     return found
+
+
+def _room_matches(room: dict, value: str) -> bool:
+    """A room matches by id or by name. A room bridged in from a chat app is listed with its
+    connection's name in front, e.g. "Bugline Telegram: bugline-support"."""
+    name = str(room.get("name"))
+    return value in (room.get("room_id"), name) or name.endswith(f": {value}")
 
 
 def ensure_eng_members(sw: Switch, room_id: str, detail: dict) -> None:
