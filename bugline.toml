@@ -1,0 +1,51 @@
+# The project Bugline works on, and the names it uses. Both agents and scripts/bootstrap.py read
+# this file; set BUGLINE_CONFIG in the shell to use another one. agents/common/project.py checks
+# it and says what is wrong. Paths are relative to the repo you fix, except `user_guide`, which
+# the front desk reads on this machine, relative to this file.
+#
+# The shipped values are the expense-splitter demo in this repo. README.md, "Run it on your own
+# repo", says what to change.
+
+[project]
+name = "bugline"
+# What the front desk calls the app in its prompts, and one sentence on what people do with it.
+product = "an expense-splitter app"
+about = "Users split trip and household costs in groups: they add members and expenses, see balances, settle up and share a group by link."
+repo_url = "https://github.com/Ishaan2053/bugline.git"
+default_branch = "main"
+clone_dir = "bugline"                  # under each coder's CODER_WORKDIR
+app_dir = "demo-app"                   # where the app, its tests and its venv live, in the clone
+test_command = "pytest -q"             # run from app_dir
+scratch_dir = "demo-app/scratch"       # the only place the reproducer may write
+user_guide = "demo-app/README.md"      # the front desk answers questions from it
+protected_paths = ["demo-app/seed.py", "**/*.db"]  # neither coder may edit these
+
+[tickets]
+prefix = "BL"                          # tickets are BL-1, BL-2, ...; 1 to 5 capital letters
+
+[report]
+# A complete bug report has every required field. They are listed in the order a ticket shows
+# them. `title` must be one of them: it is the ticket's first line. `label` is how the front desk
+# asks for a field, `heading` names it on the ticket (default: the name, capitalised), and
+# `about` tells the model and the room what goes in it.
+summary = "actual"                     # read with the title by the duplicate check
+fields = [
+  { name = "title", label = "a one-line summary", about = "Under 10 plain words, written by the front desk, not asked for. Example: Share link returns an error" },
+  { name = "group_id", heading = "Group", label = "your group id", about = "Which group: its number (the seeded group is `1`) or its share link or token (`goa-trip-share`). Either one identifies the group. Never implied: if the person did not give a group number, share link or token, it is missing. Example: 1" },
+  { name = "steps", label = "the steps you took", about = "What the person did, in order: which page, link or action, with the amounts or names involved. One step is enough when there was one action. Example: Opened the group's share link" },
+  { name = "expected", label = "what you expected to happen", about = "What the person thought would happen. It can be implied: \"the share link gives an error\" implies the person expected the summary to open, so fill it in plain words when the meaning is clear. Example: A summary of who paid what" },
+  { name = "actual", label = "what happened instead", about = "What happened instead: the error text, the status code, or the wrong numbers. Example: \"Internal Server Error\"" },
+]
+
+[rooms]
+support = "bugline-support"
+eng = "bugline-eng"
+# The chat app of each room, as Switch names it. BUGLINE_SUPPORT_BRIDGE / BUGLINE_ENG_BRIDGE in
+# the environment override these, and bootstrap's --support-bridge / --eng-bridge override both.
+support_bridge = "telegram"
+eng_bridge = "slack"
+
+[agents]
+frontdesk = "bugline-frontdesk"
+reproducer = "bugline-repro"
+fixer = "bugline-fixer"
