@@ -119,10 +119,12 @@ with the prompt on stdin, in `<workdir>\bugline`. The lists are in `config.py`.
   their personal allow rules do not widen the agent's. Without it, a test run of the reproducer
   could run `git push`, because the author's user settings allow it.
 - `--tools` hides the tools neither agent needs (web, PowerShell, subagents).
-- Both roles may read the clone, `git pull`/`checkout`/`status`/`log`/`diff`, and run `python`,
-  `pip install`, `pytest`, `curl` and the venv's scripts. The reproducer may write only under
-  `demo-app/scratch/`. The fixer may edit the clone, `git switch`/`branch`/`add`/`commit`/`push`,
-  run `ruff`, and `gh pr create`/`view`.
+- Both roles may run any shell command in the clone. Claude Code chains commands
+  (`cd demo-app && ... | tail -3; mkdir -p scratch`), and in `dontAsk` mode every part of a chain
+  must be allowed. A list of single commands refused nearly every real step in the first live
+  run, so the deny lists below keep each agent in its lane instead.
+- The reproducer may write only under `demo-app/scratch/`, and is refused `git commit`,
+  `git push`, `git merge`, `git rebase` and every `gh` command. The fixer may edit the clone.
 - Denied for both: force-push, pushing `main`, deleting branches, `git reset --hard`,
   `gh pr merge`, and editing `seed.py` or any `.db` file.
 - No AI attribution is added to commits or PR bodies (`--settings`), as `fix-policy.md` asks.
@@ -130,8 +132,7 @@ with the prompt on stdin, in `<workdir>\bugline`. The lists are in `config.py`.
 These rules narrow what Claude Code does by mistake. They are not a sandbox: `python` can run any
 code, so the briefs and the PM's review of every PR still matter.
 
-Claude Code runs inside the clone rather than the working directory because it refuses
-`cd <dir> && git ...` without asking, which `dontAsk` turns into a refusal.
+Claude Code runs inside the clone, so the repo root is its starting directory.
 
 ## Tests
 

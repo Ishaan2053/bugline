@@ -41,28 +41,13 @@ THREAD_READ_LIMIT = 100  # timeline entries read when looking for the message's 
 TOOLS = ("Read", "Glob", "Grep", "Edit", "Write", "Bash")
 
 # Claude Code runs inside the agent's clone (<workdir>/bugline), so paths below are relative to
-# the repo root and git needs no `cd` (Claude Code refuses `cd <dir> && git ...` without asking).
-
-# Both roles: read the clone, update it, set up and run the demo app, call it.
-_READ_AND_RUN = (
-    "Read",
-    "Glob",
-    "Grep",
-    "Bash(cd *)",
-    "Bash(ls *)",
-    "Bash(git pull *)",
-    "Bash(git checkout *)",
-    "Bash(git status*)",
-    "Bash(git log *)",
-    "Bash(git diff*)",
-    "Bash(python *)",
-    "Bash(py *)",
-    "Bash(pip install *)",
-    "Bash(pytest *)",
-    "Bash(curl *)",
-    "Bash(*.venv/Scripts/*)",
-    "Bash(source *.venv/Scripts/activate)",
-)
+# the repo root.
+#
+# Both roles may run any shell command. Claude Code chains commands (`cd demo-app && ... | tail`)
+# and in dontAsk mode every part of a chain must be allowed, so a list of single commands refused
+# almost every real step in the first live run. The deny lists below are what keeps each agent in
+# its lane; deny rules win over "Bash".
+_READ_AND_RUN = ("Read", "Glob", "Grep", "Bash")
 
 # The reproducer writes only scratch scripts (switch/docs/repro-checklist.md).
 REPRODUCER_ALLOWED = (
@@ -73,22 +58,19 @@ REPRODUCER_ALLOWED = (
 
 # The fixer edits the clone, commits, pushes its branch and opens the PR
 # (switch/docs/fix-policy.md).
-FIXER_ALLOWED = (
-    *_READ_AND_RUN,
-    "Edit(**)",
-    "Write(**)",
-    "Bash(git switch *)",
-    "Bash(git branch *)",
-    "Bash(git add *)",
-    "Bash(git commit *)",
-    "Bash(git push *)",
-    "Bash(ruff *)",
-    "Bash(gh pr create *)",
-    "Bash(gh pr view *)",
-)
+FIXER_ALLOWED = (*_READ_AND_RUN, "Edit(**)", "Write(**)")
 
 # Passed with --settings. Commits and PRs carry no AI attribution (switch/docs/fix-policy.md).
 CLAUDE_SETTINGS = {"attribution": {"commit": "", "pr": ""}}
+
+# The reproducer never changes the repo: no commits, pushes or pull requests.
+REPRODUCER_DENIED = (
+    "Bash(git commit*)",
+    "Bash(git push*)",
+    "Bash(git merge*)",
+    "Bash(git rebase*)",
+    "Bash(gh *)",
+)
 
 # Refused for both, even where an allow rule above would match. Deny rules win.
 DENIED = (
@@ -111,6 +93,7 @@ class Role:
     description: str
     brief: str  # file name in switch/agent-briefs/
     allowed: tuple[str, ...]
+    denied: tuple[str, ...]
 
 
 ROLES = {
@@ -119,12 +102,14 @@ ROLES = {
         "Bugline reproducer: runs Claude Code to reproduce a ticket and posts the verdict.",
         "reproducer.md",
         REPRODUCER_ALLOWED,
+        (*REPRODUCER_DENIED, *DENIED),
     ),
     "fixer": Role(
         "bugline-fixer",
         "Bugline fixer: runs Claude Code to fix an approved ticket and opens the pull request.",
         "fixer.md",
         FIXER_ALLOWED,
+        DENIED,
     ),
 }
 
@@ -139,6 +124,7 @@ class Settings:
     brief: Path
     workdir: Path
     allowed_tools: tuple[str, ...]
+    denied_tools: tuple[str, ...]
     claude_bin: str = "claude"
     timeout_s: float = DEFAULT_TIMEOUT_S
 
@@ -174,6 +160,7 @@ def settings() -> Settings:
         brief=_path("CODER_BRIEF", REPO_ROOT / "switch" / "agent-briefs" / role.brief),
         workdir=_path("CODER_WORKDIR", Path(r"C:\bugline-agents") / name),
         allowed_tools=role.allowed,
+        denied_tools=role.denied,
         claude_bin=os.environ.get("CODER_CLAUDE_BIN") or "claude",
         timeout_s=float(os.environ.get("CODER_TIMEOUT_S") or DEFAULT_TIMEOUT_S),
     )
