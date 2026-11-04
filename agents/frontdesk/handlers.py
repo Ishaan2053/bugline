@@ -47,6 +47,10 @@ class Models(Protocol):
 
 # A leading "@frontdesk" or "@bugline-frontdesk," only addresses us; it is not part of the report.
 LEADING_MENTIONS = re.compile(r"^\s*(@[\w.-]+[,:]?\s*)+")
+# The whole of an eng message after the mentions: "status" or "status BL-n", any case.
+STATUS_RE = re.compile(
+    rf"{config.STATUS_COMMAND}(?:\s+{config.TICKET_ID_RE.pattern})?[.!?]?", re.IGNORECASE
+)
 
 
 def handle(msg: IncomingMessage, store: Store, models: Models = classify) -> list[Post]:
@@ -123,7 +127,14 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
 
 
 def _handle_eng(msg: IncomingMessage, store: Store) -> list[Post]:
-    """In eng the front desk only closes tickets: a ticket id plus a PR link closes it."""
+    """In eng the front desk shows the ticket board and closes tickets.
+
+    `status` lists tickets and `status BL-n` shows one; a ticket id plus a PR link closes it.
+    No model call happens here.
+    """
+    status = STATUS_RE.fullmatch(LEADING_MENTIONS.sub("", msg.body).strip())
+    if status:
+        return [_reply(msg, _status(store, status.group(1)))]
     ticket = config.TICKET_ID_RE.search(msg.body)
     pr = config.PR_URL_RE.search(msg.body)
     if not (ticket and pr):
@@ -141,3 +152,16 @@ def _handle_eng(msg: IncomingMessage, store: Store) -> list[Post]:
         for s in subscribers
     ]
     return [_reply(msg, messages.CLOSED.format(ticket_id=ticket_id)), *notices]
+
+
+def _status(store: Store, number: str | None) -> str:
+    """The ticket board, or one ticket in full when `number` is given."""
+    if number is None:
+        tickets = store.list_tickets(config.STATUS_MAX_ROWS)
+        counts = {t.ticket_id: len(store.subscribers(t.ticket_id)) for t in tickets}
+        return messages.status_board(tickets, counts, store.utc_now(), store.count_tickets())
+    ticket_id = config.format_ticket_id(int(number))
+    ticket = store.get_ticket(ticket_id)
+    if ticket is None:
+        return messages.UNKNOWN_TICKET.format(ticket_id=ticket_id)
+    return messages.status_one(ticket, store.subscribers(ticket_id), store.utc_now())

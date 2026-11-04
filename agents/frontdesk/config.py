@@ -53,7 +53,13 @@ REPLIES_PER_MINUTE = 3  # model-backed replies per user
 REPLY_WINDOW_S = 60.0
 
 # A close message in the eng room carries a ticket id (TICKET_ID_RE) and a GitHub PR link.
-PR_URL_RE = re.compile(r"https://github\.com/[^\s]+/pull/\d+")
+# Group 1 is the PR number, which the status board shows as "PR #n".
+PR_URL_RE = re.compile(r"https://github\.com/[^\s]+/pull/(\d+)")
+
+# "@frontdesk status" in the eng room lists tickets; "status BL-n" shows one.
+STATUS_COMMAND = "status"
+# One line per ticket plus a "+n more" line keeps the board under REPLY_MAX_LINES.
+STATUS_MAX_ROWS = REPLY_MAX_LINES - 2
 
 
 # --- Switch (CLAUDE.md section 5) ---------------------------------------------------------------

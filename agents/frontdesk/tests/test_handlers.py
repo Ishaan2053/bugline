@@ -202,3 +202,83 @@ def test_replies_inside_a_thread_stay_in_that_thread(store: Store) -> None:
 def test_other_eng_messages_get_one_line_about_what_the_front_desk_does(store: Store) -> None:
     posts = handle(msg("@frontdesk BL-1 reproduced", room=config.ROOM_ENG), store, FakeModels())
     assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m1")]
+
+
+def eng(body: str, n: int = 9) -> IncomingMessage:
+    return msg(body, room=config.ROOM_ENG, user="pm", n=n)
+
+
+def test_status_with_no_tickets(store: Store) -> None:
+    posts = handle(eng("@frontdesk status"), store, FakeModels())
+    assert posts == [Post(config.ROOM_ENG, messages.NO_TICKETS, thread_id="m9")]
+
+
+def test_status_board_lists_tickets_newest_first(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))  # BL-1 at 0 min
+    store.now[0] = 5 * 60  # type: ignore[attr-defined]
+    handle(msg("@frontdesk other bug", user="u2", n=2), store, FakeModels(bug()))  # BL-2
+    handle(msg("@frontdesk me too", n=3), store, FakeModels(bug(), duplicate="BL-2"))
+    store.now[0] = 17 * 60  # type: ignore[attr-defined]
+    store.close_ticket("BL-1", PR, closed_by="bugline-repro")
+    store.now[0] = 30 * 60  # type: ignore[attr-defined]
+    handle(msg("@frontdesk third", user="u3", n=4), store, FakeModels(bug()))  # BL-3
+
+    store.now[0] = 42 * 60  # type: ignore[attr-defined]
+    (post,) = handle(eng("@frontdesk Status."), store, FakeModels())
+
+    assert post.body.splitlines() == [
+        "BL-3 · open · 12 min · u3 · Share link returns an error",
+        "BL-2 · open · 37 min · Ravi (+1) · Share link returns an error",
+        "BL-1 · closed · 17 min · Asha · PR #7, closed by bugline-repro",
+    ]
+
+
+def test_status_board_is_cut_to_fit_the_reply_limit(store: Store) -> None:
+    for i in range(12):
+        store.open_ticket("u1", "Asha", "room-support", f"bug {i + 1}", "x", {})
+    (post,) = handle(eng("@frontdesk status"), store, FakeModels())
+    lines = post.body.splitlines()
+    assert len(lines) < config.REPLY_MAX_LINES
+    assert [line.split(" · ")[0] for line in lines[:-1]] == [f"BL-{n}" for n in range(12, 4, -1)]
+    assert lines[-1] == "+4 more"
+
+
+def test_status_of_one_ticket_shows_report_and_everyone_waiting(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    handle(msg("@frontdesk me too", user="u2", n=2), store, FakeModels(bug(), duplicate="BL-1"))
+    store.now[0] = 12 * 60  # type: ignore[attr-defined]
+    (open_post,) = handle(eng("@frontdesk status bl-1"), store, FakeModels())
+    assert open_post.body.splitlines() == [
+        "BL-1: Share link returns an error",
+        "Status: open for 12 min",
+        "Subscribers: Asha (reporter), Ravi",
+        "Group: 1",
+        "Steps: Open /share/goa-trip-share",
+        "Expected: Group summary",
+        "Actual: Internal Server Error",
+        "Opened 1970-01-01 00:00 UTC",
+    ]
+
+    store.now[0] = 17 * 60  # type: ignore[attr-defined]
+    store.close_ticket("BL-1", PR, closed_by="Ishaan")
+    (closed_post,) = handle(eng("@frontdesk status BL-1"), store, FakeModels())
+    lines = closed_post.body.splitlines()
+    assert lines[1] == f"Status: closed after 17 min by Ishaan: {PR}"
+    assert lines[-1] == "Opened 1970-01-01 00:00 UTC, closed 1970-01-01 00:17 UTC"
+    assert len(lines) < config.REPLY_MAX_LINES
+
+
+def test_status_of_an_unknown_ticket(store: Store) -> None:
+    (post,) = handle(eng("@frontdesk status BL-4"), store, FakeModels())
+    assert post.body == messages.UNKNOWN_TICKET.format(ticket_id="BL-4")
+
+
+def test_status_is_not_a_command_in_the_support_room(store: Store) -> None:
+    models = FakeModels(kind("question"))
+    handle(msg("@frontdesk status"), store, models)
+    assert models.calls[0] == ("classify", "status", None)
+
+
+def test_a_sentence_starting_with_status_is_not_the_command(store: Store) -> None:
+    posts = handle(eng("@frontdesk status of BL-1 please"), store, FakeModels())
+    assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m9")]

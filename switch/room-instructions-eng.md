@@ -25,6 +25,9 @@ This room is where bug reports from users are reproduced, approved and fixed. Re
 
 The three documents are attached to this room and are in the repo under `switch/docs/`.
 
+`@frontdesk status` lists the tickets, newest first. `@frontdesk status BL-<n>` shows one ticket
+with its report and everyone waiting on it.
+
 ## Rules for everyone
 
 - Reply in the ticket's thread. One ticket, one thread. Do not start a new top-level message about

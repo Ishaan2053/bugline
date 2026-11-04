@@ -1,9 +1,11 @@
 """Tests for the ticket store and the two rate guards."""
 
+import sqlite3
+
 import pytest
 
 import config
-from store import Store, Subscriber
+from store import SCHEMA, Store, Subscriber
 
 
 @pytest.fixture
@@ -108,3 +110,39 @@ def test_state_survives_restart(tmp_path) -> None:
     first.close()
     second = Store(path)
     assert new_ticket(second) == "BL-2"
+
+
+def test_list_tickets_newest_first_with_subscribers(store: Store) -> None:
+    for title in ("first", "second", "third"):
+        new_ticket(store, title=title)
+    store.subscribe("BL-2", "u2", "support", "Ravi")
+    assert [t.title for t in store.list_tickets(2)] == ["third", "second"]
+    assert store.count_tickets() == 3
+    assert [s.name for s in store.subscribers("BL-2")] == ["Asha", "Ravi"]
+
+
+def test_close_records_who_closed_it(store: Store) -> None:
+    new_ticket(store)
+    new_ticket(store)
+    store.close_ticket("BL-1", "https://example.test/pr/1", closed_by="bugline-repro")
+    store.close_ticket("BL-2", "https://example.test/pr/2")
+    assert store.get_ticket("BL-1").closed_by == "bugline-repro"  # type: ignore[union-attr]
+    assert store.get_ticket("BL-2").closed_by is None  # type: ignore[union-attr]
+
+
+def test_a_database_without_closed_by_gets_the_column(tmp_path) -> None:
+    path = tmp_path / "old.db"
+    old_schema = SCHEMA.replace(",\n    closed_by       TEXT", "")
+    assert "closed_by" not in old_schema
+    with sqlite3.connect(path) as db:
+        db.executescript(old_schema)
+        db.execute(
+            "INSERT INTO tickets (n, ticket_id, reporter_id, reporter_name, support_room_id,"
+            " title, summary, report_json, created_at) VALUES (1, 'BL-1', 'u1', 'Asha', 's',"
+            " 't', 's', '{}', '2026-11-04T10:00:00+00:00')"
+        )
+    db.close()
+    store = Store(path)
+    assert store.get_ticket("BL-1").closed_by is None  # type: ignore[union-attr]
+    store.close()
+    Store(path).close()  # a second start finds the column and changes nothing
