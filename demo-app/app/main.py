@@ -125,7 +125,9 @@ def share(share_token: str, conn: Conn) -> dict:
             "name": row["name"],
             "total_paid": round(row["paid"], 2),
             "expenses_paid": row["expenses_paid"],
-            "average_expense": round(row["paid"] / row["expenses_paid"], 2),
+            "average_expense": (
+                round(row["paid"] / row["expenses_paid"], 2) if row["expenses_paid"] else 0.0
+            ),
         }
         for row in db.member_totals(conn, group["id"])
     ]
