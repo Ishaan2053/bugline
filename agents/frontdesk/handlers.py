@@ -57,7 +57,7 @@ def handle(msg: IncomingMessage, store: Store, models: Models = classify) -> lis
 
 
 def _reply(msg: IncomingMessage, body: str) -> Post:
-    return Post(msg.room, body, thread_id=msg.message_id)
+    return Post(msg.room, body, thread_id=msg.thread_root)
 
 
 def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[Post]:
@@ -97,7 +97,7 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
 
     duplicate_of = models.check_duplicate(report, store.open_tickets())
     if duplicate_of:
-        store.subscribe(duplicate_of, msg.sender_id, msg.room_id, msg.sender_name, msg.message_id)
+        store.subscribe(duplicate_of, msg.sender_id, msg.room_id, msg.sender_name, msg.thread_root)
         return [_reply(msg, messages.TRACKED.format(ticket_id=duplicate_of))]
 
     ticket_id = store.open_ticket(
@@ -107,7 +107,7 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
         report.title,
         report.actual,
         asdict(report),
-        thread_id=msg.message_id,
+        thread_id=msg.thread_root,
     )
     names = (config.REPRODUCER_NAME,) if config.REPRODUCER_NAME else ()
     escalate = Post(
