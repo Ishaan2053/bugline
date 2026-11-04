@@ -231,6 +231,9 @@ class RoomConnection:
         self._creds = creds
         self._ws_base = base_url.replace("http", "ws", 1)  # http->ws, https->wss
         self._eviction: str | None = None
+        # Set on every connection_state, so an agent can redo per-connection setup (taking its
+        # role) after each reconnect. Whoever waits on it clears it.
+        self.connected = asyncio.Event()
 
     def url(self) -> str:
         """Connection id and room go in the query; a reconnect resumes from the cursor."""
@@ -286,6 +289,7 @@ class RoomConnection:
                 log.info("%s: connected, rooms=%s cursor=%s", self.room, self.rooms, self.cursor)
                 if self.room_id not in self.rooms:
                     log.warning("%s: the server did not give us room %s", self.room, self.room_id)
+                self.connected.set()
             elif event == "gap":
                 self.cursor = data.get("resumed_at", self.cursor)
                 log.warning("%s: missed events (%s); resumed at %s", self.room, data, self.cursor)
