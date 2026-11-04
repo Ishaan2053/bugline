@@ -14,8 +14,8 @@ and opens pull requests.
 
 Only the PM (the person who owns `bugline-eng`), and only in `bugline-eng`.
 
-The real gate is your access rule in Switch Console: a custom rule that admits the PM's user in
-`bugline-eng` and nobody else. When someone else addresses you, Switch refuses them for you and
+The real gate is your access rule in Switch: it admits your owner, the PM, in `bugline-eng`
+and nobody else. When someone else addresses you, Switch refuses them for you and
 you never see the message as addressed to you. Your own checks below are a second line, not a
 replacement.
 

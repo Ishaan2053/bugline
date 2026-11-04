@@ -7,7 +7,7 @@ Switch carries the work across, keeps a human in charge, and closes the loop bac
 A user writes `@frontdesk` in a Telegram group. A complete bug report crosses into a Slack channel
 as ticket `BL-n`. A coding agent reproduces it. Only the PM can tell a second coding agent to fix
 it. The fixer opens a pull request, and the front desk tells everyone who reported the bug, back
-in Telegram, with the link.
+in Telegram, with the link. All of this ran live on Nov 4, 2026; the numbers are below.
 
 <!-- author: add the demo GIF here (Telegram and Slack side by side, one full loop) -->
 
@@ -24,14 +24,15 @@ carries part of the loop:
 
 | Switch primitive | What Bugline uses it for | Without it |
 | --- | --- | --- |
-| Rooms on two chat apps | `bugline-support` is a Telegram group, `bugline-eng` is a Slack channel. Both are Switch rooms with the same agents in them. | You write and host a Telegram bot, a Slack bot and a bridge between them, and map users across both. |
+| Rooms on two chat apps | `bugline-support` is a Telegram group, `bugline-eng` is a Slack channel. Both are Switch rooms, and the front desk is a member of both. | You write and host a Telegram bot, a Slack bot and a bridge between them, and map users across both. |
 | Room links | `bugline-support` → `bugline-eng` "escalates to"; `bugline-eng` → `bugline-support` "supports". Agents see that the other room exists and what it is for. A link grants no access. | Agents in `bugline-eng` have no idea the tickets come from users in a Telegram group, or where the answer goes back to. |
-| Shared role `reproducer` | The front desk's ticket ends with `@reproducer`. Whoever holds the role gets it. | Tickets go to a hard-coded agent name. |
-| Exclusive role `fixer` + custom access rule | One agent at a time holds `fixer`. A custom rule on `bugline-fixer` admits only the PM's user, only in `bugline-eng`. Anyone else who writes `@fixer` is refused by Switch, in the fixer's name, before the agent sees the message. This is the approval gate. | The gate is an `if` statement inside the agent, and a prompt can talk its way past it. |
+| Shared role `reproducer` | The front desk's ticket addresses `@reproducer`. Whoever holds the role gets it. | Tickets go to a hard-coded agent name. |
+| Exclusive role `fixer` + access rule | One agent at a time holds `fixer`. The access rule on `bugline-fixer` admits only its owner (the PM), only in `bugline-eng`. In the live run a second Switch user, `sam`, wrote `@fixer fix BL-2 now`; Switch answered "You're not permitted to direct messages to me in this room — my operator has restricted who can address me here." in the fixer's name, and the fixer program never received the message. This is the approval gate. | The gate is an `if` statement inside the agent, and a prompt can talk its way past it. |
 | Targeted messages between agents | The front desk hands a ticket to the reproducer with `send_targeted_message`, which also says whether the target is reachable. The fixer hands the PR back with `@frontdesk BL-n`. | Agents poll a shared database or a queue you build. |
 | Aliases | `bugline-frontdesk` is `@frontdesk` in both rooms. An agent holds one role across all rooms, so a per-room alias is how one agent works two rooms. | Users type internal agent names. |
-| Room instructions, documents and the repo reference | Each room has its rules. `intake-rules.md`, `repro-checklist.md` and `fix-policy.md` go in the `bugline-kit` package with the `bugline-repo` GitHub reference. | Every agent's prompt carries its own copy of the rules, and the copies drift. |
-| Console-managed coding agents and the room template | `switch/bugline.template.yaml` creates the Slack room, both coding agents, their roles, the reference and a kickoff message in one step. | You run and supervise two coding agents yourself. |
+| Room instructions and the `bugline-kit` package | Each room has its rules from `switch/room-instructions-*.md`. The `bugline-kit` package holds three library documents, `intake-rules.md`, `repro-checklist.md` and `fix-policy.md`, plus the `bugline-repo` GitHub reference, and is attached to both rooms. `scripts/bootstrap.py` makes the documents from the files in `switch/docs/`, so the text lives in one place. | Every agent's prompt carries its own copy of the rules, and the copies drift. |
+| Custom agents over the agent protocol | All three agents are programs in this repo that register over Switch's agent protocol and hold one WebSocket per room. Switch delivers only messages addressed to them. The coders take their roles with `assume_role` each time they connect. Who may address each agent is an access rule stored on the agent in Switch, not in its code. | You build the addressing, the per-room connections, the presence and the refusals yourself. |
+| Room template | `switch/bugline.template.yaml` creates `bugline-eng`, its Slack channel, the roles, the alias and the repo reference in one server call. | You click through the room, channel, roles and reference by hand. |
 
 ## Architecture
 
@@ -44,13 +45,13 @@ flowchart LR
         U["End users"]
     end
     subgraph SW["Switch"]
-        FD["@frontdesk<br/>bugline-frontdesk<br/>custom Python agent, Gemini"]
-        R["@reproducer<br/>bugline-repro<br/>shared role"]
-        F["@fixer<br/>bugline-fixer<br/>exclusive role"]
-        GATE{{"access rule:<br/>PM only, bugline-eng only"}}
+        FD["@frontdesk<br/>bugline-frontdesk<br/>custom agent, Gemini"]
+        R["@reproducer<br/>bugline-repro<br/>custom agent, Claude Code<br/>shared role"]
+        F["@fixer<br/>bugline-fixer<br/>custom agent, Claude Code<br/>exclusive role"]
+        GATE{{"access rule:<br/>owner only, bugline-eng only"}}
     end
     subgraph SL["Slack: bugline-eng"]
-        PM["PM (human)"]
+        PM["PM (human, owner)"]
     end
     GH[("GitHub PR")]
 
@@ -64,24 +65,31 @@ flowchart LR
     FD -- "7. fixed, with PR link<br/>(reporter + subscribers)" --> U
 ```
 
-The front desk is a member of both rooms and holds one WebSocket connection per room. The
-reproducer and the fixer are coding agents (Claude Code or OpenCode) that Switch Console runs on the
-author's machine, each in its own working directory. Questions, requests, off-topic messages,
-incomplete reports and duplicates stay in `bugline-support`; only complete, new bugs cross the
-link. The full rules are in [CLAUDE.md section 2](CLAUDE.md#2-architecture).
+All three agents are custom agents on the Switch agent protocol, running on the author's Windows
+machine. The front desk (`agents/frontdesk`) is a member of both rooms and holds one WebSocket
+connection per room. The reproducer and the fixer are one program, `agents/coder`, started twice
+with a different `CODER_ROLE`. Each sits in `bugline-eng` and, for each message addressed to it,
+runs Claude Code headless (`claude -p`) in its own clone with its brief as the system prompt.
+
+They are not Switch Console-managed agents because Console cannot run those on Windows. Its code
+says `"SDK sessions require a POSIX SSH execution host."`, and every provider shows "Not supported
+here". Questions, requests, off-topic messages, incomplete reports and duplicates stay in
+`bugline-support`; only complete, new bugs cross the link. The full rules are in
+[CLAUDE.md section 2](CLAUDE.md#2-architecture).
 
 ## Reproduce it in 15 minutes
 
-Part A runs from a fresh clone with Docker and Python, and every command in it was run that way
-before it was written here. Part B needs a Switch server, a Telegram bot and a Slack app of your
-own, so it is summarised here and walked through in [docs/switch-setup.md](docs/switch-setup.md).
+Part A runs from a fresh clone with Docker and Python. Part B needs a Switch server, a Telegram bot
+and a Slack app of your own; the chat-app steps are manual, and one script does the rest.
+[docs/switch-setup.md](docs/switch-setup.md) walks through part B in full.
 
 ### Prerequisites
 
 - Git and Docker with Compose v2
 - Python 3.14
-- For part B: Switch Console with a local server, Claude Code or OpenCode signed in, a Telegram
-  bot, a Slack workspace you own, the GitHub CLI (`gh`), and a Google AI Studio key
+- For part B: Switch Console with its local server running (tested with Console 0.40.1 and server
+  0.31.0 on Windows 11), Claude Code signed in (`claude`), the GitHub CLI signed in
+  (`gh auth login`), a Telegram account, a Slack workspace you own, and a Google AI Studio key
 
 ### Part A: the demo app and the tests
 
@@ -125,7 +133,7 @@ The 500 on the share link is fault 1, planted on purpose (`ZeroDivisionError` in
 `docker compose logs demo-app`). The `owes` values add up to 9099.99 of 9100.00 spent: that is
 fault 2. Stop the app with `docker compose down`.
 
-Run the tests for the demo app and the front desk. PowerShell, from the repo root:
+Run the tests. PowerShell, from the repo root (the demo app first, then the front desk):
 
 ```powershell
 cd demo-app
@@ -159,59 +167,94 @@ pytest -q
 python agent.py --help
 ```
 
-Expect `8 passed` for the demo app and `43 passed, 1 skipped` for the front desk (the skipped test
+Expect `8 passed` for the demo app and `37 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
-`--list-rooms`.
+`--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
+`agents/common` (`7 passed`), `agents/coder` (`10 passed`) and `scripts` (`5 passed`).
 
-### Part B: the Switch setup (needs your own Switch server)
+### Part B: Switch, Telegram and Slack
 
-These steps need a live Switch server, Telegram and Slack, so they could not be run from a clean
-clone. Follow [docs/switch-setup.md](docs/switch-setup.md) in order; in short:
+1. **Chat apps, by hand.** Make a Telegram bot with group privacy off and a group named
+   `bugline-support`; connect the bot in Switch Console, add it to the group and post one
+   message so the room appears. Make a Slack app from Switch's manifest and connect it. Link your
+   own Telegram and Slack accounts in Console. Details:
+   [switch-setup.md part A](docs/switch-setup.md#part-a-the-chat-apps-by-hand).
+2. **Agent folders.** Make the two venvs, put your Gemini key in the front desk's `.env`, and clone
+   the repo once for each coder (each clone needs the demo app's venv, so the agents can run its
+   tests):
 
-1. Connect a Telegram bot and add it to a group: that group becomes `bugline-support`. Connect a
-   Slack app. Link your own Telegram and Slack accounts.
-2. Run `python scripts/bootstrap.py` (try `--dry-run` first). It registers the three agents, makes
-   `bugline-eng` from the template, puts the agents in the rooms, and sets the access rules, room
-   links, instructions, aliases and the `bugline-kit` package.
-3. Fill in `agents/frontdesk/.env` (see [.env.example](agents/frontdesk/.env.example)), start the
-   front desk with `python agent.py`, and type `!follow-ups off` in both rooms.
-4. Run the six seeded paths in [docs/switch-setup.md step 15](docs/switch-setup.md#15-smoke-run-the-six-seeded-paths).
+   ```powershell
+   cd agents\frontdesk; py -3.14 -m venv .venv; .\.venv\Scripts\pip install -r requirements.txt
+   Copy-Item .env.example .env   # set GEMINI_API_KEY; bootstrap fills in the rest
+   cd ..\coder; py -3.14 -m venv .venv; .\.venv\Scripts\pip install -r requirements.txt
+   cd ..\..
+   git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-repro\bugline
+   git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-fixer\bugline
+   # in each clone's demo-app\: py -3.14 -m venv .venv; .\.venv\Scripts\pip install -r requirements-dev.txt
+   ```
+
+3. **Everything else in Switch, one command.** From the repo root:
+
+   ```powershell
+   agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --dry-run
+   agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py
+   ```
+
+   It logs in as Console's local admin, registers the three agents, makes `bugline-eng` from the
+   template, puts the agents in the rooms, sets the access rules, room instructions, links and
+   aliases, creates `bugline-kit`, and writes the API URL and room ids into both `.env` files. It
+   prints `created`, `exists` or `skipped (why)` for each thing, so it is safe to run again.
+4. **Start the agents and quiet the rooms.** One terminal each:
+
+   ```powershell
+   cd agents\frontdesk; .\.venv\Scripts\python agent.py
+   cd agents\coder; $env:CODER_ROLE = "reproducer"; .\.venv\Scripts\python agent.py
+   cd agents\coder; $env:CODER_ROLE = "fixer"; .\.venv\Scripts\python agent.py
+   ```
+
+   Then type `!follow-ups off` in both rooms, so agents act only when named.
+5. Run the seeded paths in
+   [switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
 
 ## The workflow, step by step
 
-One bug, fault 1 (the share link error), from report to fix, across both apps.
+One bug, fault 1 (the share link error), from report to fix, across both apps, as it ran on Nov 4.
 
-1. **Report.** A user in `bugline-support` writes
-   `@frontdesk I opened the share link /share/goa-trip-share for group 1 and got "Internal Server Error"`.
-   If a field is missing (steps, expected, actual, group), the front desk asks once for exactly
-   that.
+1. **Report.** In `bugline-support` the user wrote `the share link is broken.` to the front desk.
+   It asked once for the missing fields: "To pass this to the team I need the steps you took and
+   your group id." The user replied with `group 1, I opened the share link goa-trip-share
+   expecting the summary but got Internal Server Error`.
    <!-- author: add screenshot of the report and the front desk's reply in Telegram -->
-2. **Handoff.** The front desk checks open tickets for a duplicate, opens `BL-1`, and posts it in
-   `bugline-eng` in the shape in [intake-rules.md](switch/docs/intake-rules.md#handing-a-bug-to-bugline-eng),
-   ending with `@reproducer`. The user is told the ticket id.
+2. **Handoff.** The front desk opened `BL-1` and posted it in `bugline-eng` in the shape in
+   [intake-rules.md](switch/docs/intake-rules.md#handing-a-bug-to-bugline-eng), addressed to
+   `@reproducer`. The user was told "logged as BL-1".
    <!-- author: add screenshot of BL-1 arriving in Slack -->
-3. **Reproduce.** The reproducer runs a scratch script on a fresh seeded database and replies in
-   the thread with the output, `Verdict: reproduced`, and the likely cause
+3. **Reproduce.** The reproducer ran a scratch script on a fresh seeded database and replied in
+   the thread: `ZeroDivisionError` in `share()`, `Verdict: reproduced`, and the cause (Meera paid
+   for no expenses, so `expenses_paid` is 0)
    ([repro-checklist.md](switch/docs/repro-checklist.md)).
    <!-- author: add screenshot of the reproducer's verdict -->
-4. **Refusal.** Someone who is not the PM writes `@fixer fix BL-1 now`. Switch refuses in the
-   fixer's name. The fixer never sees it as an instruction.
+4. **Refusal.** Someone who is not the PM writes `@fixer fix BL-2 now`. Switch refuses in the
+   fixer's name, and the fixer program never sees it. (Run live on `BL-2` by a second Switch user
+   through the Gateway chat API; a second Slack account is not tested yet.)
    <!-- author: add screenshot of the refusal -->
-5. **Approve and fix.** The PM replies in the thread:
-   `@fixer go on BL-1, keep it to the share handler, add a regression test`. The fixer branches,
-   writes the failing test, fixes one handler, runs `pytest -q` and ruff, and opens a PR titled
-   `BL-1: ...` ([fix-policy.md](switch/docs/fix-policy.md)). It posts
-   `@frontdesk BL-1 is fixed: <PR link>`.
+5. **Approve and fix.** The PM replied in the thread:
+   `@fixer go on BL-1, keep it to the share handler, add a regression test`. The fixer branched,
+   wrote the failing test, guarded the division, ran `pytest -q` and ruff, opened
+   [PR #18](https://github.com/Ishaan2053/bugline/pull/18) titled `BL-1: ...`
+   ([fix-policy.md](switch/docs/fix-policy.md)), and posted `@frontdesk BL-1 is fixed: <PR link>`.
    <!-- author: add screenshot of the fixer's PR message and the PR -->
-6. **Close the loop.** The front desk closes `BL-1` and posts in `bugline-support` that it is fixed,
-   with the link, to the reporter and to every user whose duplicate report was matched to `BL-1`.
+6. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
+   "Ishaan2053, BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/18". For `BL-2`, a
+   second user's duplicate report was matched to it, and both reporters got the message.
    <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
 
-The quiet paths (a question answered from the user guide, a vague report, a duplicate, an
-off-topic message) are rows 3 to 6 of the
-[seeded-faults table](CLAUDE.md#demo-app-expense-splitter-demo-app). The exact messages for each,
-and the "not reproduced" check, are in
-[switch-setup.md step 15](docs/switch-setup.md#15-smoke-run-the-six-seeded-paths).
+PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
+
+The quiet paths (a question answered from the user guide, a request, a vague report, a duplicate,
+an off-topic message, a burst of messages, a report the reproducer could not reproduce) all ran
+live too. The exact messages are in
+[switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
 
 ## The agents
 
@@ -219,12 +262,13 @@ Three agents, one job each. Switch, not the agents, decides who may instruct eac
 
 | Agent | Addressed as | Runtime | Switch role | Who may instruct it | Brief |
 | --- | --- | --- | --- | --- | --- |
-| `bugline-frontdesk` | `@frontdesk` (alias in both rooms) | Custom Python agent over the Switch agent protocol; Gemini through `google-genai` | none (an alias, since an agent holds one role across all rooms) | Anyone | [frontdesk.md](switch/agent-briefs/frontdesk.md) |
-| `bugline-repro` | `@reproducer`, `@bugline-repro` | Coding agent run by Switch Console (Claude Code or OpenCode) | `reproducer`, shared | The PM and the front desk ("Me and my agents") | [reproducer.md](switch/agent-briefs/reproducer.md) |
-| `bugline-fixer` | `@fixer`, `@bugline-fixer` | Coding agent run by Switch Console (Claude Code or OpenCode) | `fixer`, exclusive | The PM only, in `bugline-eng` only (custom access rule) | [fixer.md](switch/agent-briefs/fixer.md) |
+| `bugline-frontdesk` | `@frontdesk` (alias in both rooms) | Custom Python agent over the Switch agent protocol ([agents/frontdesk](agents/frontdesk/README.md)); Gemini through `google-genai` | none (an alias, since an agent holds one role across all rooms) | Anyone | [frontdesk.md](switch/agent-briefs/frontdesk.md) |
+| `bugline-repro` | `@reproducer`, `@bugline-repro` | Custom Python agent ([agents/coder](agents/coder/README.md), `CODER_ROLE=reproducer`) that runs Claude Code headless in its own clone | `reproducer`, shared | Its owner (the PM) and the owner's agents, so the front desk | [reproducer.md](switch/agent-briefs/reproducer.md) |
+| `bugline-fixer` | `@fixer`, `@bugline-fixer` | The same program with `CODER_ROLE=fixer` | `fixer`, exclusive | Its owner (the PM) only, in `bugline-eng` only | [fixer.md](switch/agent-briefs/fixer.md) |
 
-The front desk's code and its settings are described in
-[agents/frontdesk/README.md](agents/frontdesk/README.md).
+The coders run Claude Code with `--permission-mode dontAsk`, a per-role allow list and a deny list
+(the reproducer cannot commit, push or call `gh`; neither can force-push, push `main` or merge).
+[agents/coder/README.md](agents/coder/README.md) lists every rule and why.
 
 ## The problem this solves for a real team
 
@@ -234,36 +278,57 @@ across by hand, asks the user for the missing details, and forgets to tell them 
 Bugline moves only complete, new bugs across, gives each one a ticket id and a reproduction before
 a person looks at it, keeps the decision to change code with one named person, and tells every
 reporter when the fix is up. The demo app is an expense splitter, but nothing in the rooms, briefs
-or front desk depends on it beyond the user guide and the repo reference.
+or agents depends on it beyond the user guide and the repo reference.
 
-<!-- author: add model-call count per full loop and wall time from a live run (calls.log) -->
+What one loop cost on Nov 4, from `agents/frontdesk/calls.log` and the coder logs:
+
+| Loop | Front desk Gemini calls | Claude Code runs | Report to "fixed" in Telegram |
+| --- | --- | --- | --- |
+| `BL-1` (fault 1) | 2 (`gemini-3.5-flash-lite`, 3,053 tokens): the vague report, then the complete one | 3: reproducer 22 s (refused, see below), reproducer again 26 s, fixer 55 s | 16 min 57 s, most of it the permission fix and restart between the two reproducer runs |
+| `BL-2` (fault 2) | 1 to open it, 2 more for the second user's duplicate (classify, duplicate check) | 2: reproducer 24 s, fixer 51 s | 2 min 25 s, both reporters told |
+
+The whole smoke run, every seeded path, took 13 Gemini calls. The target was under 25 per loop.
 
 ## What the agents got wrong and how the briefs fixed it
 
-No live agent run has happened yet. These are the things the build got wrong before then, and
-where the fix lives:
+From the live run on Nov 4:
 
-- **The plan assumed one WebSocket could cover both rooms.** The Switch docs and server source say
-  one connection covers one room. The front desk holds two connections, and each operation call
-  carries the connection id of the room it acts in
-  ([CLAUDE.md section 5](CLAUDE.md#5-switch-protocol-facts-for-the-custom-frontdesk)).
-- **The plan assumed `post_message` takes mentions.** It does not, and events carry no mentions
-  list. Handoffs use `send_targeted_message`, and the front desk reads `BL-n` and the PR link
-  from the message body, which is why [fix-policy.md](switch/docs/fix-policy.md) fixes the exact
-  shape of the fixer's done message.
-- **The plan had the front desk open itself to "anyone".** The server refuses that with 403. The
-  owner sets it in Switch Console ([switch-setup.md step 6](docs/switch-setup.md#6-let-anyone-talk-to-the-front-desk)).
-- **The plan put the PM-only rule in the template.** Templates offer only three presets. The
-  fixer's rule is a custom access rule set in Console, and
-  [fixer.md](switch/agent-briefs/fixer.md) says that rule, not the agent's own checks, is the gate.
-- **The plan made `@frontdesk` a role.** An agent holds one role across all rooms, so it became a
-  per-room alias.
-- **`gemini-2.5-flash-lite` returned 404**, "no longer available to new users". The lite model is
-  now `gemini-3.5-flash-lite`, named once in `agents/frontdesk/config.py`.
+- **The reproducer could not run a single command.** Its first try at `BL-1` replied "every
+  command, even `git status`, was refused". Claude Code chains shell commands
+  (`cd demo-app && ... | tail -3; mkdir -p scratch`), and in `dontAsk` mode every part of a chain
+  must be on the allow list; ours listed single commands. The fix allows `Bash` for both roles and
+  keeps each one in its lane with deny lists (`agents/coder/config.py`). The retry reproduced
+  `BL-1` in 26 seconds.
+- **Switch Console cannot run coding agents on Windows.** The plan had Console run the reproducer
+  and the fixer. Every provider showed "Not supported here", and Console's code blocks Windows
+  ("SDK sessions require a POSIX SSH execution host"). So both became custom protocol agents,
+  like the front desk, that start Claude Code per message (`agents/coder`). The room template lost
+  its `agents:` block, which the server refuses anyway.
+- **There is no Gateway web UI in native mode.** Console runs the server natively on Windows and
+  hides "Full admin interface"; the Gateway port answers 404. The steps that needed it
+  (registration key, access rules, documents, packages) go through the Gateway API instead, and
+  `scripts/bootstrap.py` does them all.
+- **A typo reached nobody.** On Slack's free plan Switch cannot create agent user groups, so
+  there is no `@` autocomplete for agents. The PM typed `@repoducer`, and it went nowhere without
+  an error. Names must be typed exactly; the troubleshooting section of
+  [switch-setup.md](docs/switch-setup.md#troubleshooting) says so.
+- **The front desk replied in the wrong thread.** It passed the id of the message that addressed it
+  as the thread, not the thread's root, so a reply to a reply did not land in the ticket's thread.
+  It now replies in the root (`IncomingMessage.thread_root`).
+
+From reading the Switch docs and server source before the live run:
+
+- One WebSocket covers one room, so the front desk holds two, and each op call carries the
+  connection id of its room.
+- `post_message` takes no mentions, and events carry no mentions list. Handoffs use
+  `send_targeted_message`, and the front desk reads `BL-n` and the PR link from the body, which is
+  why [fix-policy.md](switch/docs/fix-policy.md) fixes the shape of the fixer's done message.
+- An agent cannot open itself to "anyone" (403), and templates offer only three access presets.
+  Both rules are set on the agent by its owner; bootstrap does it through the Gateway API.
+- `@frontdesk` became a per-room alias, not a role, because an agent holds one role everywhere.
+- `gemini-2.5-flash-lite` returned 404 for new users; the lite model is `gemini-3.5-flash-lite`.
 
 The day-by-day record is in [docs/build-journal.md](docs/build-journal.md).
-
-<!-- author: add what the reproducer and fixer got wrong in live runs, and the brief change that fixed each -->
 
 ## Built with Wispr Flow
 
@@ -276,10 +341,12 @@ reviews) and what the Insights numbers show -->
 
 ```text
 demo-app/            FastAPI + SQLite expense splitter with seeded faults, tests, Dockerfile
-agents/frontdesk/    the custom Switch agent: protocol client, handlers, Gemini calls, SQLite store
-switch/              room template, room instructions, docs/ (shared documents), agent-briefs/
+agents/common/       shared by all three agents: Switch protocol client, ticket id format, .env loading
+agents/frontdesk/    the front desk: handlers, Gemini calls, SQLite store, Dockerfile
+agents/coder/        the reproducer and the fixer: one program that runs Claude Code headless
+switch/              room template, room instructions, docs/ (the bugline-kit documents), agent-briefs/
 scripts/             bootstrap.py: everything in Switch after the chat-app connections, idempotent
-docs/                switch-setup.md (full Switch walkthrough), build-journal.md
+docs/                switch-setup.md (Switch walkthrough and troubleshooting), build-journal.md
 docker-compose.yml   demo app; front desk under the `agents` profile
 CLAUDE.md            project context for coding agents, including the seeded-faults table
 ```
@@ -287,22 +354,30 @@ CLAUDE.md            project context for coding agents, including the seeded-fau
 ## Tests and CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `ruff format --check`, `ruff check`
-and `pytest -q` for `demo-app/` and `agents/frontdesk/` on Python 3.14.7, on every pull request
-and on `main`. The tests that would catch faults 1 and 2 are left out on purpose; the fixer adds
-them during the demo.
+and `pytest -q` for `demo-app/`, `agents/common/`, `agents/frontdesk/`, `agents/coder/` and
+`scripts/` on Python 3.14.7, on every pull request and on `main`. The tests that would catch
+faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
 
 ## Limits and next steps
 
-- Part B has not been run end to end against a live Switch server yet. Steps the docs do not
-  cover are marked **(unverified)** in [docs/switch-setup.md](docs/switch-setup.md).
-- A role mention reaches an agent only while its session holds the role. If `@reproducer` or
-  `@fixer` gets no answer, address the agent by name
-  ([switch-setup.md step 14](docs/switch-setup.md#14-when-a-role-mention-reaches-nobody)).
-- The template cannot make the Telegram room or link to it, register the front desk, set custom
-  access rules or attach packages. The setup script and guide cover these by hand.
+- The limit of 5 open tickets per user is unit-tested but was not hit in the live run.
+- `scripts/bootstrap.py` was run against the live setup (it found everything and created
+  `bugline-kit`), not against a fresh server; its create paths are unit-tested against a fake one.
+- The second user in the live run (`sam`) posted through the Gateway chat API, not from a second
+  Telegram or Slack account. The refusal wording for an unlinked chat account may differ
+  ([switch-setup.md](docs/switch-setup.md#troubleshooting)).
+- The front desk's Docker service is not verified against Console's native server, which listens
+  on 127.0.0.1 only; run the front desk natively, as in part B.
+- Console picks the server's ports at start, so they can change after a restart. Run
+  `scripts/bootstrap.py` again (it rewrites `SWITCH_API_URL` in both `.env` files) and restart the
+  agents.
+- Only tested on Windows 11 with Console 0.40.1. On macOS or Linux, Console could run the coders
+  as managed agents instead; that path is not tested.
+- A role mention reaches a coder only while its program is running and holds the role. The front
+  desk says so in the ticket's thread when `send_targeted_message` reports no live target.
 - Feature requests are logged by the front desk, not handed over. Next step: show them to the PM.
-- The front desk runs on the Gemini free tier. It backs off on HTTP 429 and, if that fails, tells
-  the user it is rate-limited rather than going quiet.
+- The front desk runs on the Gemini free tier. It backs off on HTTP 429 and, if that fails, asks
+  the user to send the message again rather than going quiet.
 
 ## Licence and credits
 
@@ -310,6 +385,7 @@ MIT, see [LICENSE](LICENSE).
 
 Built on [Switch](https://github.com/sandbox-quantum/switch), for the
 [Flip the Switch Hackathon](https://www.wemakedevs.org/hackathons/switch) run by WeMakeDevs. The
-front desk uses Google [Gemini](https://ai.google.dev/) through `google-genai`. The demo app uses
+front desk uses Google [Gemini](https://ai.google.dev/) through `google-genai`; the coders run
+[Claude Code](https://docs.claude.com/en/docs/claude-code/overview) headless. The demo app uses
 [FastAPI](https://fastapi.tiangolo.com/). The room template follows the shape of the official
-two-agent example template in the Switch repo.
+example templates in the Switch repo.

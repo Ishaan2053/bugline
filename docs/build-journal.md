@@ -41,3 +41,41 @@ One dated entry per session: what was done, what broke, what fixed it.
 - Not done yet, needs the Switch server: registering the front desk, both rooms, the managed
   reproducer and fixer, the refusal test and the full loop. Everything that rests on an unverified
   protocol detail is tagged "(unverified)" in `docs/switch-setup.md` and in the PR descriptions.
+
+## 2026-11-04 (afternoon): the live run
+
+- Switch Console 0.40.1 on Windows runs the server natively (switch-core 0.31.0). Ports come from
+  `ports.json`; the API was 50073. There is no Gateway web UI in native mode, so the registration
+  key, access rules and the template run went through the Gateway API, signed in as Console's
+  local admin.
+- Broke: Console cannot run managed coding agents on Windows ("SDK sessions require a POSIX SSH
+  execution host"); every provider said "Not supported here". Fixed with Route B: `agents/coder`,
+  one custom protocol agent that runs Claude Code headless, started as `bugline-repro` and as
+  `bugline-fixer` (PR #16). The shared Switch client moved to `agents/common` (PR #13).
+- Broke: the server refuses the template's `agents:` block ("Unknown top-level key(s): agents").
+  The room was made from the template without it. The committed template now has no such block.
+- Rooms up: `bugline-support` on Telegram, `bugline-eng` on Slack, linked both ways, instructions
+  and aliases set, roles held. Setup script fixed to read `list_rooms` as the server returns it
+  (PR #14).
+- Broke: the reproducer's first run on `BL-1` could not run one shell command; in `dontAsk` mode
+  every part of a chained command must be allowed. Fixed by allowing `Bash` and keeping deny lists
+  per role (PR #17). The retry reproduced `BL-1` in 26 s.
+- Broke: `@repoducer` (typo) reached nobody. Slack's free plan has no agent user groups, so there is
+  no autocomplete; names must be typed exactly.
+- Full loop on fault 1: vague report, front desk asked for steps and group, `BL-1` in Slack,
+  reproducer verdict, PM approval, fixer PR #18 in 55 s, "BL-1 is fixed" back in Telegram. 2 Gemini
+  calls, 3 Claude Code runs, 17 minutes end to end including the permission fix.
+- Quiet paths all passed: question answered from the user guide, request logged, off-topic muted
+  after one reply, `BL-2` reproduced (9099.99 of 9100.0), a second user's duplicate matched to
+  `BL-2`, the burst guard, a false report "not reproduced", and the refusal: Switch told `sam` he
+  is not permitted to address the fixer, and the fixer never saw the message. `BL-2` closed with
+  PR #19 and both reporters notified, 2 min 25 s from report. 13 Gemini calls for the whole run.
+- Broke: the front desk replied under the message that addressed it instead of the thread root.
+  Fixed in PR #20.
+- PRs #18 and #19 stay open: they remove the seeded faults.
+- `scripts/bootstrap.py` replaces `setup_rooms.py`: one idempotent run for everything after the
+  chat-app connections, written from the API calls above. Run against the live setup it found
+  everything and created `bugline-kit` (three library documents from `switch/docs/` plus the
+  `bugline-repo` reference, attached to both rooms); a second run printed only "exists".
+- Not tested live: the 5-open-tickets limit, the front desk in Docker against the native server,
+  and bootstrap on a fresh server.
