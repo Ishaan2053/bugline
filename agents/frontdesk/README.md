@@ -13,7 +13,7 @@ as ticket `BL-n`, and tells every reporter when the fix lands. The rules it foll
 | File | What it does |
 | --- | --- |
 | `agent.py` | Main loop: one connection per room, hands messages to `handlers.py`, posts the replies |
-| `switch_client.py` | Registration, the WebSocket per room (pings, reconnect), op calls |
+| `../common/` | Code shared with the other custom agents: the Switch client (registration, one WebSocket per room, ops), the ticket id format, `.env` loading |
 | `handlers.py` | What to do with one message; returns posts, so it is tested without a socket |
 | `messages.py` | Every text the agent posts, including the escalation and close formats |
 | `classify.py` | The Gemini calls: classify, duplicate check, answer a question |

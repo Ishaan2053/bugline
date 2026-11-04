@@ -10,12 +10,13 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
+from common.switch_client import IncomingMessage
+
 import classify
 import config
 import messages
 from classify import Classification, RateLimited, Report
 from store import Draft, Store, Ticket
-from switch_client import IncomingMessage
 
 
 @dataclass(frozen=True)

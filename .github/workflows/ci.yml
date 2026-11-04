@@ -1,4 +1,4 @@
-# Runs the tests and ruff for both Python projects on every PR and on main.
+# Runs the tests and ruff for each Python project on every PR and on main.
 name: ci
 
 on:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        project: [demo-app, agents/frontdesk]
+        project: [demo-app, agents/common, agents/frontdesk]
     defaults:
       run:
         working-directory: ${{ matrix.project }}

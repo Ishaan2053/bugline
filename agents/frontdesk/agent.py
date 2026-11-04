@@ -12,12 +12,12 @@ import logging
 import sys
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-import config
-import handlers
-from handlers import Post
-from store import Store
-from switch_client import (
+# agents/, so the shared package `common` imports when this runs as `python agent.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from common.switch_client import (
     IncomingMessage,
     OpError,
     RoomConnection,
@@ -26,6 +26,11 @@ from switch_client import (
     load_credentials,
     register,
 )
+
+import config
+import handlers
+from handlers import Post
+from store import Store
 
 log = logging.getLogger("frontdesk")
 
@@ -66,14 +71,7 @@ class Poster:
 
     async def _post(self, room: str, body: str, thread_id: str | None) -> None:
         connection = self.connections[room]
-        try:
-            result = await self.api.call(
-                "post_message", connection.connection_id, body=body, thread_id=thread_id
-            )
-        except OpError as exc:
-            if exc.status != 409:  # 409: the connection is down; post without it, unthreaded
-                raise
-            result = await self.api.post_without_connection(connection.room_id, body)
+        result = await self.api.post(connection.connection_id, connection.room_id, body, thread_id)
         self._remember(result)
         log.info("%s <- %s", room, body.splitlines()[0][:80])
 
@@ -102,7 +100,7 @@ async def dispatch(
 
 async def serve() -> None:
     base_url = config.switch_api_url()
-    creds = load_credentials()
+    creds = load_credentials(config.CREDENTIALS_PATH)
     api = SwitchApi(base_url, creds)
     log.info("bridge %s: %s", base_url, await api.health())
     ops = await api.list_ops()
@@ -111,7 +109,9 @@ async def serve() -> None:
         raise RuntimeError(f"bridge does not offer {missing}")
 
     connections = {
-        room: RoomConnection(room, room_id, creds, base_url, connection_id_for(room))
+        room: RoomConnection(
+            room, room_id, creds, base_url, connection_id_for(room, config.CONNECTIONS_PATH)
+        )
         for room, room_id in config.room_ids().items()
     }
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="handlers")
@@ -129,7 +129,7 @@ async def serve() -> None:
 
 
 async def list_rooms() -> None:
-    api = SwitchApi(config.switch_api_url(), load_credentials())
+    api = SwitchApi(config.switch_api_url(), load_credentials(config.CREDENTIALS_PATH))
     try:
         rooms = await api.call("list_rooms")
         if isinstance(rooms, dict):  # the result shape is not documented; accept {"rooms": [...]}
@@ -151,7 +151,9 @@ def main() -> int:
     try:
         if args.register:
             url, key = config.switch_api_url(), config.require_env(config.REGISTRATION_KEY_ENV)
-            creds = register(url, key)
+            creds = register(
+                url, key, config.AGENT_NAME, config.AGENT_DESCRIPTION, config.CREDENTIALS_PATH
+            )
             print(f"Registered {config.AGENT_NAME} as agent {creds.agent_id}.")
             print(f"Its id and API key are saved in {config.CREDENTIALS_PATH}.")
         else:

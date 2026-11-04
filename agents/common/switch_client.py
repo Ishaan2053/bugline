@@ -1,10 +1,11 @@
-"""The front desk's side of the Switch agent protocol: register once, one WebSocket per room, ops.
+"""The Switch agent protocol for Bugline's agents: register once, one WebSocket per room, ops.
 
 Switch has no Python client library, so this follows the protocol pages of the docs
 (docs.switchagents.ai: agent-protocol, agent-connection, agent-events). One connection covers one
-room, so the agent opens a `RoomConnection` for the support room and one for the eng room, and
-every op call carries the connection id of the room it acts in. Nothing here knows about tickets
-or Gemini; agent.py wires this module to handlers.py.
+room, so an agent opens one `RoomConnection` per room it works in, and every op call carries the
+connection id of the room it acts in. The front desk and the coder agents both use this module;
+it knows nothing about tickets, Gemini or Claude Code, and each agent passes in its own name and
+file paths.
 """
 
 import asyncio
@@ -21,9 +22,11 @@ import httpx
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
-import config
-
 log = logging.getLogger(__name__)
+
+HTTP_TIMEOUT_S = 30.0
+RECONNECT_START_S = 1.0  # WebSocket reconnect backoff, doubled up to the cap
+RECONNECT_CAP_S = 30.0
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,7 @@ class Credentials:
 class IncomingMessage:
     """An addressed `message` event, cut down to the fields the handlers use."""
 
-    room: str  # room key: config.ROOM_SUPPORT or config.ROOM_ENG
+    room: str  # the agent's own key for the room, as given to RoomConnection
     room_id: str
     sender_id: str  # opaque participant id; compare it, never parse it
     sender_name: str
@@ -67,20 +70,21 @@ class ConnectionStopped(Exception):
 def register(
     base_url: str,
     registration_key: str,
-    path: Path | None = None,
+    name: str,
+    description: str,
+    path: Path,
     transport: httpx.BaseTransport | None = None,
 ) -> Credentials:
-    """Register the front desk once with `POST /agents` and save its id and API key.
+    """Register the agent once with `POST /agents` and save its id and API key to `path`.
 
     Refuses if credentials already exist: registering again is a 409, and `overwrite` would
     issue a new key and break the old one, so it is never used.
     """
-    path = path or config.CREDENTIALS_PATH
     if path.exists():
         raise RuntimeError(f"{path} exists; the agent is already registered")
     body = {
-        "name": config.AGENT_NAME,
-        "description": config.AGENT_DESCRIPTION,
+        "name": name,
+        "description": description,
         "connector_type": "custom",
         "integration_profile": {
             "connection_model": "session_addressable",
@@ -90,7 +94,7 @@ def register(
             "event_reporting": [],
         },
     }
-    with httpx.Client(transport=transport, timeout=config.HTTP_TIMEOUT_S) as client:
+    with httpx.Client(transport=transport, timeout=HTTP_TIMEOUT_S) as client:
         response = client.post(
             f"{base_url}/agents",
             json=body,
@@ -104,17 +108,15 @@ def register(
     return creds
 
 
-def load_credentials(path: Path | None = None) -> Credentials:
-    path = path or config.CREDENTIALS_PATH
+def load_credentials(path: Path) -> Credentials:
     if not path.exists():
         raise RuntimeError(f"{path} not found; run `python agent.py --register` first")
     data = json.loads(path.read_text(encoding="utf-8"))
     return Credentials(agent_id=data["id"], api_key=data["api_key"])
 
 
-def connection_id_for(room: str, path: Path | None = None) -> str:
+def connection_id_for(room: str, path: Path) -> str:
     """The connection id for a room key, created once and reused on every reconnect and restart."""
-    path = path or config.CONNECTIONS_PATH
     ids = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     if room not in ids:
         ids[room] = str(uuid.uuid4())
@@ -136,7 +138,7 @@ class SwitchApi:
         self._http = httpx.AsyncClient(
             base_url=base_url,
             transport=transport,
-            timeout=config.HTTP_TIMEOUT_S,
+            timeout=HTTP_TIMEOUT_S,
             headers={"Authorization": f"Bearer {creds.api_key}"},
         )
 
@@ -163,6 +165,18 @@ class SwitchApi:
             "POST", f"/agents/{self.agent_id}/ops/{op}", json=body, headers=headers
         )
         return data.get("result")
+
+    async def post(
+        self, connection_id: str, room_id: str, body: str, thread_id: str | None = None
+    ) -> dict[str, Any]:
+        """`post_message` in the connection's room. If the connection is down (409), post through
+        `post_without_connection` instead, which cannot thread but does not lose the message."""
+        try:
+            return await self.call("post_message", connection_id, body=body, thread_id=thread_id)
+        except OpError as exc:
+            if exc.status != 409:
+                raise
+            return await self.post_without_connection(room_id, body)
 
     async def post_without_connection(self, room_id: str, content: str) -> dict[str, Any]:
         """`POST /agents/{id}/message`: posts with no live connection, but cannot thread."""
@@ -234,7 +248,7 @@ class RoomConnection:
     ) -> None:
         """Stay connected forever, reconnecting with backoff. Raises ConnectionStopped when the
         server says retrying will not help."""
-        delay = config.RECONNECT_START_S
+        delay = RECONNECT_START_S
         headers = {"Authorization": f"Bearer {self._creds.api_key}"}
         while True:
             code: int | None = None
@@ -243,7 +257,7 @@ class RoomConnection:
                 async with connect(self.url(), additional_headers=headers) as ws:
                     await self._read(ws, queue)
                     code = ws.close_code
-                    delay = config.RECONNECT_START_S  # the server ended a working connection
+                    delay = RECONNECT_START_S  # the server ended a working connection
             except ConnectionClosed as exc:
                 code = exc.rcvd.code if exc.rcvd else None
             except (OSError, InvalidHandshake, TimeoutError) as exc:
@@ -254,7 +268,7 @@ class RoomConnection:
                 )
             log.warning("%s: disconnected (code %s); reconnecting in %.0fs", self.room, code, delay)
             await sleep(delay)
-            delay = min(delay * 2, config.RECONNECT_CAP_S)
+            delay = min(delay * 2, RECONNECT_CAP_S)
 
     async def _read(self, ws: Any, queue: asyncio.Queue[IncomingMessage]) -> None:
         async for raw in ws:

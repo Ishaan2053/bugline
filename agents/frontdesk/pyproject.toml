@@ -8,6 +8,6 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", ".."]  # ".." makes agents/common importable as `common`
 testpaths = ["tests"]
 markers = ["live: calls the real Gemini API; runs only with GEMINI_API_KEY set and BUGLINE_LIVE=1"]

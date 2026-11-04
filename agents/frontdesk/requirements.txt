@@ -1,3 +1,2 @@
+-r ../common/requirements.txt
 google-genai==2.34.0
-httpx==0.28.1
-websockets==17.4

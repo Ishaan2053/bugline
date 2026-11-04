@@ -9,7 +9,9 @@ services:
       - "8000:8000"
 
   frontdesk:
-    build: ./agents/frontdesk
+    build:
+      context: ./agents  # the agent imports agents/common
+      dockerfile: frontdesk/Dockerfile
     profiles: [agents]
     env_file: agents/frontdesk/.env
     environment:
@@ -18,7 +20,7 @@ services:
       FRONTDESK_USER_FAQ: /refs/demo-app-README.md
       FRONTDESK_CALLS_LOG: state/calls.log
     volumes:
-      - frontdesk-state:/app/state
+      - frontdesk-state:/app/frontdesk/state
       - ./switch/docs:/refs/switch-docs:ro
       - ./demo-app/README.md:/refs/demo-app-README.md:ro
     # Lets SWITCH_API_URL=http://host.docker.internal:<port> reach a Switch server on this machine.

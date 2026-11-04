@@ -8,10 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
-from websockets.asyncio.server import serve
-
-import config
-from switch_client import (
+from common.switch_client import (
     ConnectionStopped,
     Credentials,
     IncomingMessage,
@@ -21,6 +18,7 @@ from switch_client import (
     connection_id_for,
     register,
 )
+from websockets.asyncio.server import serve
 
 CREDS = Credentials(agent_id="agent-1", api_key="key-1")
 
@@ -190,17 +188,24 @@ def test_register_saves_credentials_once(tmp_path: Path) -> None:
         return httpx.Response(200, json={"id": "agent-9", "api_key": "secret"})
 
     path = tmp_path / "state" / "credentials.json"
-    creds = register("http://switch.test", "reg-key", path, httpx.MockTransport(handler))
+    creds = register(
+        "http://switch.test",
+        "reg-key",
+        "bugline-test",
+        "A test agent",
+        path,
+        httpx.MockTransport(handler),
+    )
 
     assert creds == Credentials("agent-9", "secret")
     assert json.loads(path.read_text()) == {"id": "agent-9", "api_key": "secret"}
     body = json.loads(seen[0].content)
-    assert body["name"] == config.AGENT_NAME
+    assert body["name"] == "bugline-test" and body["description"] == "A test agent"
     assert body["integration_profile"]["connection_model"] == "session_addressable"
     assert "overwrite" not in body
     assert seen[0].headers["Authorization"] == "Bearer reg-key"
     with pytest.raises(RuntimeError, match="already registered"):
-        register("http://switch.test", "reg-key", path, httpx.MockTransport(handler))
+        register("http://switch.test", "reg-key", "bugline-test", "", path)
     assert len(seen) == 1
 
 
