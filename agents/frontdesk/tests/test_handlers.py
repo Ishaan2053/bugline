@@ -186,6 +186,19 @@ def test_close_in_eng_notifies_reporter_and_every_subscriber(store: Store) -> No
     assert again == [Post(config.ROOM_ENG, messages.NOT_OPEN.format(ticket_id="BL-1"), "m9")]
 
 
+def test_replies_inside_a_thread_stay_in_that_thread(store: Store) -> None:
+    # The live BL-2 run: the fixer's close is a reply in the ticket's thread (root t1), so
+    # "Closed" must go to t1, not start a sub-thread under the fixer's own message.
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    close = msg(f"@frontdesk BL-1 fixed in {PR}", room=config.ROOM_ENG, n=9, thread="t1")
+    assert handle(close, store, FakeModels())[0].thread_id == "t1"
+    # A report completed by a reply in a support thread is answered, and later notified, there.
+    completed = msg("@frontdesk group 1", user="u2", n=3, thread="t2")
+    assert handle(completed, store, FakeModels(bug()))[-1].thread_id == "t2"
+    close_2 = msg(f"@frontdesk BL-2 fixed in {PR}", room=config.ROOM_ENG, n=10, thread="t3")
+    assert handle(close_2, store, FakeModels())[-1].thread_id == "t2"
+
+
 def test_other_eng_messages_get_one_line_about_what_the_front_desk_does(store: Store) -> None:
     posts = handle(msg("@frontdesk BL-1 reproduced", room=config.ROOM_ENG), store, FakeModels())
     assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m1")]
