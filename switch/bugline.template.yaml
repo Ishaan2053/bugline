@@ -1,65 +1,60 @@
-# Bugline: the engineering room, its two coding agents and their roles.
+# Bugline: the engineering room, its three agents and their roles.
 #
-# Shape taken from the official two-agent example template and its two-room
-# sibling, support-desk.template.yaml, both in
-# https://github.com/sandbox-quantum/switch/tree/main/examples/agent-templates
-# Written for template version 1 on Switch server 0.31.
+# This file is the one definition of bugline-eng. scripts/bootstrap.py sends it
+# to the server (POST /gateway/rooms/from-yaml) when the room does not exist;
+# it can also be imported in Switch Console. Shape taken from the official
+# examples in https://github.com/sandbox-quantum/switch/tree/main/examples/agent-templates
+# (support-desk.template.yaml is the closest). Written for template version 1
+# on Switch server 0.31.
 #
-# Switch Console creates the two coding agents under `agents:`. The server
-# creates the `room:` on the Slack connection, with its roles, the repo
-# reference, the front desk alias and a kickoff message.
+# There is no `agents:` block. That block is run by Switch Console, not the
+# server: the server refuses it ("Unknown top-level key(s): agents"), and
+# Console cannot run managed coding agents on Windows ("SDK sessions require a
+# POSIX SSH execution host"). So all three agents are custom agents in this
+# repo (agents/frontdesk and agents/coder) that register over the agent
+# protocol. bootstrap.py registers them before it sends this template, because
+# the room names them and the server stops if a name is unknown.
 #
-# What this template cannot do, and where it is done instead
-# (docs/switch-setup.md walks through each one):
+# What this template cannot do, and what bootstrap.py does instead:
 # - The Telegram room bugline-support. Telegram bots cannot create chats, so
-#   the room appears when the bot is added to the group.
-# - The links between bugline-support and bugline-eng. Template `links:` only
-#   join rooms made by the same template. scripts/setup_rooms.py makes them.
-# - The front desk agent. Templates only create coding agents (provider claude,
-#   codex or opencode). The front desk registers itself over the agent protocol
-#   and is named here as an existing agent, so register it first.
-# - Access rules beyond the presets. The fixer's rule "the PM only, in
-#   bugline-eng only" is a custom rule set in Switch Console.
-# - The shared documents. They live in switch/docs/ and go into the room as
-#   library documents in the bugline-kit package, so their text exists in one
-#   place. Version 1 templates cannot attach packages.
-# - `!follow-ups off`. It is a chat command, typed in each room.
+#   that room appears when the bot is added to the group.
+# - The links between the two rooms. Template `links:` only join rooms made by
+#   the same template.
+# - Access rules beyond the presets. The fixer's rule ("the owner only, in
+#   bugline-eng only") is set on the agent with the Gateway API.
+# - The full room instructions. They live in switch/room-instructions-eng.md;
+#   the short pointer below is replaced by that file's text.
+# - The shared documents. They go into the room as library documents in the
+#   bugline-kit package, read from switch/docs/ at run time, so their text
+#   exists in one place.
+# `!follow-ups off` is a chat command; type it in each room.
 version: 1
 
 params:
-  team:
+  room:
     type: string
-    description: >-
-      Prefix for the room and the two agents. Keep bugline for the real run;
-      use another prefix to test the template without name clashes.
-    default: bugline
+    description: Name of the engineering room.
+    default: bugline-eng
     pattern: "[a-z][a-z0-9-]*"
   frontdesk:
     type: string
-    description: >-
-      Name of the front desk agent. It must already be registered
-      (agents/frontdesk/README.md), or the run stops.
+    description: Name of the registered front desk agent (agents/frontdesk).
     default: bugline-frontdesk
+    input: advanced
+  reproducer:
+    type: string
+    description: Name of the registered reproducer agent (agents/coder, CODER_ROLE=reproducer).
+    default: bugline-repro
+    input: advanced
+  fixer:
+    type: string
+    description: Name of the registered fixer agent (agents/coder, CODER_ROLE=fixer).
+    default: bugline-fixer
     input: advanced
   repo_url:
     type: string
     description: The GitHub repo the agents read and fix. Change it if you forked Bugline.
     default: https://github.com/Ishaan2053/bugline
-    input: advanced
-  provider:
-    type: provider
-    description: Which coding agent backs the reproducer and the fixer. The first one installed is chosen.
-    default: [claude, opencode]
-    input: advanced
-  location:
-    type: location
-    description: The machine both agents run on.
-    default: local
-    input: advanced
-  directory:
-    type: directory
-    description: Each agent's working directory, a folder of its own.
-    default: 'C:\bugline-agents\{agent}'
     input: advanced
   bridge:
     type: bridge
@@ -68,58 +63,23 @@ params:
       Do not pick Telegram; it cannot create chats.
     required: true
 
-agents:
-  # The briefs live in switch/agent-briefs/. These short instructions point
-  # there so the brief text is not copied into this file. After the run, the
-  # owner pastes the full brief into Agent instructions in Switch Console.
-  - name: "{team}-repro"
-    description: Reproduces bug tickets in bugline-eng and posts a verdict
-    # Me and my agents: the PM and the front desk (both the owner's) can
-    # address it. No custom rule needed.
-    addressing: owner-agents
-    provider: "{provider}"
-    location: "{location}"
-    directory: "{directory}"
-    # Reuse an agent of this name if one was already made in Switch Console.
-    allow_existing: true
-    instructions: |
-      You are the reproducer for Bugline. Your brief is
-      switch/agent-briefs/reproducer.md in {repo_url}. Clone that repo into
-      your working directory if it is not there, read the brief, and follow
-      it. Until you have read it, do nothing but say you are reading it.
-  - name: "{team}-fixer"
-    description: Fixes a bug ticket after the PM approves it and opens a PR
-    # The closest preset. Replace it after the run with a custom rule in
-    # Switch Console: the PM's user, room bugline-eng, no agents.
-    addressing: owner
-    provider: "{provider}"
-    location: "{location}"
-    directory: "{directory}"
-    allow_existing: true
-    instructions: |
-      You are the fixer for Bugline. Your brief is
-      switch/agent-briefs/fixer.md in {repo_url}. Clone that repo into your
-      working directory if it is not there, read the brief, and follow it.
-      Change no code until you have read it and the PM has approved a ticket
-      in its thread.
-
 room:
-  name: "{team}-eng"
+  name: "{room}"
   description: Reproduce, approve and fix bugs reported in bugline-support
-  # The rules are in switch/room-instructions-eng.md. scripts/setup_rooms.py
-  # replaces this pointer with the whole file, so the text lives in one place.
+  # Replaced by switch/room-instructions-eng.md when bootstrap.py runs.
   instructions: |
     Room rules: switch/room-instructions-eng.md in {repo_url}. Read it and
     follow it. Shared documents: switch/docs/ in the same repo.
   bridge: "{bridge}"
   channel_type: channel_public
-  agents: ["{frontdesk}", "{team}-repro", "{team}-fixer"]
+  agents: ["{frontdesk}", "{reproducer}", "{fixer}"]
   users: ["{$creator}"]
   # The front desk holds no role (an agent holds one role across all its
-  # rooms), so it gets an alias in each room instead. Unverified: whether a
-  # {param} is expanded in a map key. setup_rooms.py sets the alias as well.
+  # rooms), so it gets an alias in each room instead.
   aliases:
     "{frontdesk}": frontdesk
+  # The coder agents take these roles themselves with `assume_role` each time
+  # they connect, so `@reproducer` and `@fixer` reach them.
   roles:
     - name: reproducer
       exclusive: false
@@ -143,9 +103,9 @@ room:
       value:
         urls: ["{repo_url}"]
 
-# Posted for the deployer once everyone has joined. It wakes both agents so
-# they take their roles; a role reaches an agent only while it holds it.
+# Posted once, for the people in the room. It names no agent: the agents are
+# not running yet when the room is made, and an addressed coder would start a
+# Claude Code run for a greeting.
 kickoff: |
-  @{team}-repro take the reproducer role in this room, then say hello in one
-  line. @{team}-fixer take the fixer role in this room, then say hello in one
-  line and say who may approve your work.
+  This room is set up. Type `!follow-ups off` here, then start the three
+  agents as the README says ("Reproduce it", part B).

@@ -15,7 +15,7 @@ What goes where:
 | `bugline-support` (Telegram) | Adding the bot to the Telegram group (step 2) |
 | `bugline-frontdesk` | Its own `--register` run (step 5) |
 | `bugline-eng` (Slack), `bugline-repro`, `bugline-fixer`, roles, repo reference | The room template `switch/bugline.template.yaml` (step 8), or by hand (step 8b) |
-| Room links, room instructions, front desk aliases | `scripts/setup_rooms.py` (step 10) |
+| Room links, room instructions, front desk aliases, access rules, `bugline-kit` | `scripts/bootstrap.py` (step 10) |
 | Fixer access rule, front desk "Anyone", documents, `bugline-kit` | By hand (steps 6, 9, 11) |
 
 ## 0. Before you start
@@ -101,8 +101,7 @@ its address bar gives the Gateway's host and port, which is usually not the brid
    agent". Do not use the server's bootstrap `AGENT_REGISTRATION_TOKEN`.
 2. Register once. The server returns the id and API key only once; `--register` saves both to
    `agents/frontdesk/state/credentials.json` (gitignored) and refuses to run if that file exists.
-   Copy the two values into `scripts/.env` if you use `setup_rooms.py`. Registering the same name
-   again fails with 409. Full details and environment variables:
+   Registering the same name again fails with 409. Full details and environment variables:
    [agents/frontdesk/README.md](../agents/frontdesk/README.md).
 
    PowerShell:
@@ -235,37 +234,15 @@ parameter), and that the room got the `bugline-repo` reference. Step 10 sets bot
    Switch Console agents inherit your `gh` login. Check the git name and email are yours; the
    fixer commits with them.
 
-## 10. Links, room instructions and aliases: `scripts/setup_rooms.py`
+## 10. Links, room instructions, aliases, access rules and `bugline-kit`: `scripts/bootstrap.py`
 
-The template cannot link to the Telegram room, so this script makes the two links and sets the
-rest that can be set without taking a room away from the running front desk. It acts as the front
-desk, with the id and key from step 5. Every call is listed in the script's docstring
-**(unverified: not yet run against a live server)**.
-
-PowerShell:
+`scripts/bootstrap.py` does steps 5 to 11 in one idempotent run through the Gateway API. Its
+docstring lists every step; it prints "created", "exists" or "skipped (why)" for each.
 
 ```powershell
-Copy-Item scripts\.env.example scripts\.env   # optional: it falls back to agents/frontdesk/.env and the saved credentials
-py -3.14 scripts\setup_rooms.py --dry-run
-py -3.14 scripts\setup_rooms.py
+agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --dry-run
+agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py
 ```
-
-Bash:
-
-```bash
-cp scripts/.env.example scripts/.env
-python3.14 scripts/setup_rooms.py --dry-run
-python3.14 scripts/setup_rooms.py
-```
-
-It prints each step. Re-running it is safe. If it stops at "rooms match", the front desk is not in
-that room yet (step 7 or 8), or the room has another name: put the room id in `scripts/.env`.
-
-If the script cannot run, do the same by hand: Gateway → each room's page → **Add linked room**:
-`bugline-support` → `bugline-eng` labelled `escalates to`, and `bugline-eng` → `bugline-support`
-labelled `supports`. Paste `switch/room-instructions-support.md` and
-`switch/room-instructions-eng.md` into each room's instructions, and run
-`!set-alias @bugline-frontdesk @frontdesk` in `#bugline-eng`.
 
 A link tells agents the other room exists. It does not let anyone into it.
 

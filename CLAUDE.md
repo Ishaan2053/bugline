@@ -132,12 +132,12 @@ bugline/
   demo-app/                 FastAPI app, tests, Dockerfile, docker-compose.yml, seed.py
   agents/frontdesk/           agent.py, prompts/, Dockerfile, .env.example, requirements.txt
   switch/
-    bugline.template.yaml   room template: params / agents / room / kickoff
+    bugline.template.yaml   room template: params / room / kickoff (no agents: block)
     room-instructions-support.md
     room-instructions-eng.md
     docs/                   intake-rules.md, repro-checklist.md, fix-policy.md
     agent-briefs/           frontdesk.md, reproducer.md, fixer.md
-  scripts/setup_rooms.py    fallback: create rooms, links, roles, documents via the operations API
+  scripts/bootstrap.py      one idempotent run: agents, bugline-eng, access rules, links, bugline-kit
   docs/                     blog draft, video script, screenshots, wispr-scorecard.png
 ```
 

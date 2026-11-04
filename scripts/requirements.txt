@@ -1,0 +1,2 @@
+# bootstrap.py uses the agents' shared Switch client (httpx, websockets).
+-r ../agents/common/requirements.txt

@@ -1,0 +1,12 @@
+# Tool settings only (ruff and pytest). Dependencies are pinned in requirements*.txt.
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]  # bootstrap.py puts agents/ on the path itself, for `common`
+testpaths = ["tests"]

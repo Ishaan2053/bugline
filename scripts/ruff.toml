@@ -1,3 +1,0 @@
-# Same settings as demo-app/pyproject.toml, for the scripts in this folder.
-target-version = "py314"
-line-length = 100

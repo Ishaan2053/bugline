@@ -170,18 +170,12 @@ clone. Follow [docs/switch-setup.md](docs/switch-setup.md) in order; in short:
 
 1. Connect a Telegram bot and add it to a group: that group becomes `bugline-support`. Connect a
    Slack app. Link your own Telegram and Slack accounts.
-2. Register the front desk once with `python agent.py --register`, using a registration key from
-   the Gateway. Set **Who can talk to your agent → Anyone** for it in Switch Console, and invite
-   it to the Telegram group with `!invite-agent @bugline-frontdesk`.
-3. Import `switch/bugline.template.yaml` in Switch Console → **Templates** and run it on the Slack
-   connection. It makes `bugline-eng`, `bugline-repro`, `bugline-fixer` and both roles.
-4. Paste the briefs into each coding agent's instructions and give `bugline-fixer` the custom
-   access rule: your user, room `bugline-eng`, no agents.
-5. Run `scripts/setup_rooms.py` (try `--dry-run` first) for the room links, room instructions and
-   aliases. Add the documents and the `bugline-kit` package in the Gateway.
-6. Fill in `agents/frontdesk/.env` (see [.env.example](agents/frontdesk/.env.example)), start the
+2. Run `python scripts/bootstrap.py` (try `--dry-run` first). It registers the three agents, makes
+   `bugline-eng` from the template, puts the agents in the rooms, and sets the access rules, room
+   links, instructions, aliases and the `bugline-kit` package.
+3. Fill in `agents/frontdesk/.env` (see [.env.example](agents/frontdesk/.env.example)), start the
    front desk with `python agent.py`, and type `!follow-ups off` in both rooms.
-7. Run the six seeded paths in [docs/switch-setup.md step 15](docs/switch-setup.md#15-smoke-run-the-six-seeded-paths).
+4. Run the six seeded paths in [docs/switch-setup.md step 15](docs/switch-setup.md#15-smoke-run-the-six-seeded-paths).
 
 ## The workflow, step by step
 
@@ -284,7 +278,7 @@ reviews) and what the Insights numbers show -->
 demo-app/            FastAPI + SQLite expense splitter with seeded faults, tests, Dockerfile
 agents/frontdesk/    the custom Switch agent: protocol client, handlers, Gemini calls, SQLite store
 switch/              room template, room instructions, docs/ (shared documents), agent-briefs/
-scripts/             setup_rooms.py: room links, instructions and aliases through the Switch ops API
+scripts/             bootstrap.py: everything in Switch after the chat-app connections, idempotent
 docs/                switch-setup.md (full Switch walkthrough), build-journal.md
 docker-compose.yml   demo app; front desk under the `agents` profile
 CLAUDE.md            project context for coding agents, including the seeded-faults table
