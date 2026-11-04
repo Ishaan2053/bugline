@@ -43,7 +43,7 @@ program. The brief is the second line of defence. The code adds no third one.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SWITCH_API_URL` | required | The bridge URL, the same as the front desk's |
-| `SWITCH_REGISTRATION_KEY` | needed for `--register` | Gateway registration key |
+| `SWITCH_REGISTRATION_KEY` | needed for `--register` | Registration key; bootstrap registers without it |
 | `SWITCH_ENG_ROOM_ID` | required | Room id of `bugline-eng` |
 | `CODER_ROLE` | required | `reproducer` or `fixer`; set it per shell |
 | `CODER_AGENT_NAME` | `bugline-repro` / `bugline-fixer` | Switch agent name |
@@ -59,11 +59,15 @@ program. The brief is the second line of defence. The code adds no third one.
    agents use these logins, so they run natively, not in Docker.
 2. Clone the repo into each working directory and make the demo app's venv with Python 3.14.
    If `py -3.14` does not resolve, use the full path to a 3.14 `python.exe`.
-3. Copy `.env.example` to `.env` and fill in the three `SWITCH_` values.
-4. Register each agent once. Credentials go to `state/<agent name>/credentials.json`.
-5. In Switch, invite both agents to `bugline-eng`, add the roles, and set the fixer's access rule
-   (PM only, in `bugline-eng` only). [docs/switch-setup.md](../../docs/switch-setup.md) has the
-   steps.
+3. From the repo root, run `scripts/bootstrap.py`
+   ([docs/switch-setup.md part B](../../docs/switch-setup.md#part-b-scriptsbootstrappy)). It
+   registers both agents (credentials go to `state/<agent name>/credentials.json`), writes
+   `SWITCH_API_URL` and `SWITCH_ENG_ROOM_ID` into `.env`, puts both agents in `bugline-eng` with
+   its roles, and sets the access rules: the reproducer its owner and the owner's agents, the
+   fixer its owner only, in `bugline-eng` only.
+
+Without bootstrap: copy `.env.example` to `.env`, fill in the three `SWITCH_` values, run
+`--register` once per role, then add the agents, roles and access rules by hand.
 
 PowerShell, from `agents/coder/`:
 
@@ -75,8 +79,7 @@ git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-fi
 py -3.14 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-$env:CODER_ROLE = "reproducer"; python agent.py --register
-$env:CODER_ROLE = "fixer"; python agent.py --register
+python ..\..\scripts\bootstrap.py   # or, without it: $env:CODER_ROLE = "reproducer"; python agent.py --register (and "fixer")
 ```
 
 Run each agent in its own terminal:
@@ -91,8 +94,7 @@ Bash:
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-CODER_ROLE=reproducer python agent.py --register
-CODER_ROLE=fixer python agent.py --register
+python ../../scripts/bootstrap.py   # or CODER_ROLE=reproducer|fixer python agent.py --register
 CODER_ROLE=reproducer python agent.py   # one terminal
 CODER_ROLE=fixer python agent.py        # another
 ```

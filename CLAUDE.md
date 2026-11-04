@@ -70,8 +70,8 @@ when named.
 | Role | Type | Agent name | Runtime | Who may instruct | Job |
 | --- | --- | --- | --- | --- | --- |
 | `frontdesk` | shared | `bugline-frontdesk` | Custom Python agent over the Switch protocol, Gemini | `anyone` | Classify each report as bug / question / request; ask for missing fields; answer questions from the repo reference; hand complete bugs to `#eng` as a structured report with a ticket id (`BL-n`); post the resolution back to the reporter |
-| `reproducer` | shared | `bugline-repro` | Console-managed coding agent (OpenCode + Gemini, or Claude Code if the subscription covers it) | frontdesk + PM | Clone the referenced repo, write the smallest failing script, run it, post exact output + verdict (reproduced / not) + likely cause. **Never guess.** |
-| `fixer` | **exclusive** | `bugline-fixer` | Console-managed coding agent | **PM only, in `bugline-eng` only** | Fix one handler, add a regression test, run tests, open a PR, post the link, mention `@frontdesk` with the ticket id. Never touch migrations or data. |
+| `reproducer` | shared | `bugline-repro` | Custom protocol agent in `agents/coder` running Claude Code headless (Console cannot run coding agents on Windows) | frontdesk + PM | Clone the referenced repo, write the smallest failing script, run it, post exact output + verdict (reproduced / not) + likely cause. **Never guess.** |
+| `fixer` | **exclusive** | `bugline-fixer` | The same `agents/coder` program with `CODER_ROLE=fixer` | **PM only, in `bugline-eng` only** | Fix one handler, add a regression test, run tests, open a PR, post the link, mention `@frontdesk` with the ticket id. Never touch migrations or data. |
 
 ### Shared material (room documents, in `switch/docs/`)
 
@@ -130,7 +130,9 @@ bugline/
   README.md                 judge-facing; structure in section 8
   LICENSE                   MIT
   demo-app/                 FastAPI app, tests, Dockerfile, docker-compose.yml, seed.py
+  agents/common/            Switch protocol client, ticket id format, .env loading (shared)
   agents/frontdesk/           agent.py, prompts/, Dockerfile, .env.example, requirements.txt
+  agents/coder/             bugline-repro and bugline-fixer: one program running Claude Code
   switch/
     bugline.template.yaml   room template: params / room / kickoff (no agents: block)
     room-instructions-support.md
@@ -191,7 +193,7 @@ bugline/
 ## 5. Switch protocol facts (for the custom frontdesk)
 
 - Confirm the bridge base URL with `GET /health`. It is usually **not** the Gateway URL.
-- Register once with `POST /agents` using a *registration* API key from the Gateway's API Keys page.
+- Register once with `POST /agents` using a *registration* API key (`POST /gateway/api-keys`).
   Body: `name` (`^[a-z0-9][a-z0-9._-]*$`), `description`, `connector_type: "custom"`,
   `integration_profile: {connection_model: "session_addressable", message_exchange: true,
   pre_invocation_mediation: [], post_invocation_mediation: [], event_reporting: []}`.
@@ -200,7 +202,7 @@ bugline/
   `POST /agents/register-known`.
 - New agents answer only their owner. The agent cannot change this itself (the server refuses
   `update_agent_detail` on yourself with 403): the owner sets **Who can talk to your agent → Anyone**
-  for `bugline-frontdesk` in Switch Console.
+  for `bugline-frontdesk` (`PUT /gateway/agents/{id}/addressing-policy {"policy": null}`).
 - Connect: WebSocket at `/agents/{agent_id}/connection/ws` with `Authorization: Bearer <api_key>`;
   the connection id (UUID, reused on reconnect) and the room go in **query parameters**.
   **One connection covers one room**, so the frontdesk holds two (support + eng), and each op call
@@ -222,11 +224,18 @@ bugline/
 - Roles are not access rules. An agent holds one role across all rooms, so `@frontdesk` is a
   per-room alias (`!set-alias`), not a role. A role mention (`@fixer`) reaches an agent only while
   its session is live and holds the role. "PM only, in `bugline-eng` only" is a custom access rule
-  the owner sets on `bugline-fixer` in Console; templates only offer `owner`, `owner-agents`,
-  `anyone`. Refusals are posted by Switch, and their wording depends on account linking.
+  the owner sets on `bugline-fixer` (`owner: true`, `rooms: [<eng id>]`, set by
+  `scripts/bootstrap.py`); templates only offer `owner`, `owner-agents`, `anyone`. Refusals are posted by Switch, and their wording depends on account linking.
 - Templates can create and link only their own rooms; the Telegram room is adopted by adding the
   bot, and the custom frontdesk is registered by its own script. `docs/switch-setup.md` lists what
   is manual.
+- Switch Console on Windows runs the server natively. Its ports are in
+  `%APPDATA%\switchdash\local-switch-server\ports.json` (`api` is the bridge) and can change on
+  restart. It serves no Gateway web UI; the Gateway API under `<api>/gateway/...` works with the
+  admin login in `native\run\switch-core.env` (cookie from `POST /gateway/auth/login`). It cannot
+  run managed coding agents ("SDK sessions require a POSIX SSH execution host"), and
+  `POST /gateway/rooms/from-yaml` refuses a template `agents:` block. Hence `agents/coder` and
+  `scripts/bootstrap.py` (verified Nov 4, Console 0.40.1, server 0.31.0).
 - Docs are available to agents over MCP at `https://docs.switchagents.ai/mcp`; use it to check any
   detail above before relying on it.
 
@@ -313,18 +322,19 @@ clone and are on video.
 - [x] Check newest releases of Python, FastAPI, pytest, httpx, websockets, `google-genai`, ruff and
       the Docker base image; note them in `docs/build-journal.md`
 - [x] Docker Desktop (WSL2) works: `docker run hello-world`
-- [ ] Install latest stable Switch Console for Windows; start a local server; bundled Mattermost up
-- [ ] Decide the coding-agent provider: if the Claude subscription includes Claude Code, sign in
+- [x] Install latest stable Switch Console for Windows; start a local server; bundled Mattermost up
+- [x] Decide the coding-agent provider: if the Claude subscription includes Claude Code, sign in
       and prefer it; otherwise install OpenCode, configure Google provider with the AI Studio key
 - [ ] Console > Settings > Agent providers shows "Signed in" (if "CLI not installed": close the
       Console window — this quits the app on Windows — and reopen)
 - [ ] Create the Switch expert from Templates with "Start it in a room"; it answers one question
-- [ ] **Go / no-go:** provider answers in a room → Route A for reproducer/fixer. Otherwise Route B
-      (custom Python agents) for everything, 90-minute cap on trying
+- [x] **Go / no-go:** provider answers in a room → Route A for reproducer/fixer. Otherwise Route B
+      (custom Python agents) for everything, 90-minute cap on trying. Route B: Console cannot run
+      coding agents on Windows
 - [ ] Add the Switch docs MCP (`https://docs.switchagents.ai/mcp`) to the coding agent
-- [ ] Telegram: BotFather bot, group `bugline-support`, connect in Console
-- [ ] Slack: create app in the personal workspace, channel `#bugline-eng`, connect in Console
-- [ ] Gateway > API Keys: registration key; `GET /health` on the bridge
+- [x] Telegram: BotFather bot, group `bugline-support`, connect in Console
+- [x] Slack: create app in the personal workspace, channel `#bugline-eng`, connect in Console
+- [x] Gateway > API Keys: registration key; `GET /health` on the bridge
 - [ ] 20-line Python skeleton: register `hello-agent`, WebSocket, pong, post "hi" when addressed
 - [ ] Dictate build-journal entry for the day
 
@@ -334,49 +344,49 @@ clone and are on video.
 - [x] Fresh clone: `docker compose up` + `curl` works
 - [x] PR `demo-app: expense splitter with seeded faults` squash-merged to `main`; this is the
       repo the room references
-- [ ] Room `bugline-eng` on Slack; room instructions set; repo registered as reference
-- [ ] Documents `intake-rules.md`, `repro-checklist.md`, `fix-policy.md` attached
-- [ ] Roles `reproducer` (shared) and `fixer` (exclusive) defined; `!roles` shows both
-- [ ] Agent `bugline-repro` created, added to the room, holds `reproducer`
-- [ ] "@reproducer the share link for group 1 returns 500 — reproduce it" → script, traceback, cause
-- [ ] Non-bug report → "could not reproduce" with what it tried
+- [x] Room `bugline-eng` on Slack; room instructions set; repo registered as reference
+- [x] Documents `intake-rules.md`, `repro-checklist.md`, `fix-policy.md` attached
+- [x] Roles `reproducer` (shared) and `fixer` (exclusive) defined; `!roles` shows both
+- [x] Agent `bugline-repro` created, added to the room, holds `reproducer`
+- [x] "@reproducer the share link for group 1 returns 500 — reproduce it" → script, traceback, cause
+- [x] Non-bug report → "could not reproduce" with what it tried
 - [ ] Commit `switch/`; journal entry; 20-second clip of the reproducer result
 
 ### Day 2 — Nov 5 (frontdesk + Telegram + full loop)
 
-- [ ] `agents/frontdesk/`: register once, WebSocket loop, pong, reconnect with same connection id
-- [ ] Classification with JSON schema; question → answer from repo; incomplete → ask; complete →
+- [x] `agents/frontdesk/`: register once, WebSocket loop, pong, reconnect with same connection id
+- [x] Classification with JSON schema; question → answer from repo; incomplete → ask; complete →
       post to `bugline-eng` mentioning `@reproducer` with ticket id `BL-n`
-- [ ] SQLite ticket table: ticket id → reporter id, support room id, status, summary,
+- [x] SQLite ticket table: ticket id → reporter id, support room id, status, summary,
       `subscribers` (list of reporter ids)
-- [ ] `off-topic` class: one polite reply, no follow-up engagement
-- [ ] Duplicate check against open tickets before escalating; match → "already tracked as
+- [x] `off-topic` class: one polite reply, no follow-up engagement
+- [x] Duplicate check against open tickets before escalating; match → "already tracked as
       `BL-n`", subscribe the reporter, nothing posted to `#eng`
-- [ ] Close notifies the reporter **and** all subscribers
-- [ ] Rate guards in `store.py`: max 5 open tickets per user; 3 model-backed replies per user
+- [x] Close notifies the reporter **and** all subscribers
+- [x] Rate guards in `store.py`: max 5 open tickets per user; 3 model-backed replies per user
       per minute; both checked before any model call
 - [ ] Test the quiet paths: duplicate report, off-topic message, 6th open ticket, burst of
       messages from one user
-- [ ] Backoff on 429; calls.log
-- [ ] `addressing: anyone`; `connection_model: session_addressable`
-- [ ] Dockerfile + compose service for the frontdesk
-- [ ] Room `bugline-support` on Telegram; frontdesk in both rooms; `!follow-ups off` in both
-- [ ] Links: support → eng `escalates to`; eng → support `supports`
+- [x] Backoff on 429; calls.log
+- [x] `addressing: anyone`; `connection_model: session_addressable`
+- [x] Dockerfile + compose service for the frontdesk
+- [x] Room `bugline-support` on Telegram; frontdesk in both rooms; `!follow-ups off` in both
+- [x] Links: support → eng `escalates to`; eng → support `supports`
 - [ ] Second Telegram account as the "end user"
-- [ ] Agent `bugline-fixer`: exclusive role `fixer`; access rule PM-only in `bugline-eng`;
+- [x] Agent `bugline-fixer`: exclusive role `fixer`; access rule PM-only in `bugline-eng`;
       `gh auth login` in its working directory
 - [ ] Refusal test from a second Slack user → refused
-- [ ] Approval test: "@fixer go on BL-1, keep it to the share handler, add a regression test" →
+- [x] Approval test: "@fixer go on BL-1, keep it to the share handler, add a regression test" →
       branch, tests, PR link, mentions `@frontdesk BL-1`
-- [ ] Front desk posts "BL-1 is fixed — <PR link>" in Telegram
+- [x] Front desk posts "BL-1 is fixed — <PR link>" in Telegram
 - [ ] Full run on fault 1; record model-call count and wall time; journal; clips of handoff + refusal
 
 ### Day 3 — Nov 6 (feature freeze; reproducibility, README, video)
 
 - [ ] `switch/bugline.template.yaml` (`version: 1`, modelled on the official `triage-pair`
       template); tested with a fresh team prefix
-- [ ] If the template cannot express two rooms / links / the custom agent → `scripts/setup_rooms.py`
-      via the operations API, documented
+- [x] If the template cannot express two rooms / links / the custom agent → `scripts/bootstrap.py`
+      via the Gateway API, documented
 - [ ] README per section 8; every "Reproduce it" command tested from a fresh clone in a new folder
 - [ ] `.env.example` for frontdesk and demo app; no secrets committed
 - [ ] Rehearse the video script; record with both apps on screen right after a quota reset;
@@ -399,7 +409,7 @@ clone and are on video.
 
 1. Fault 2 (rounding)
 2. PR opening — fixer posts diff + test output instead
-3. Room template — replaced by `scripts/setup_rooms.py` + documented manual setup
+3. Room template — replaced by `scripts/bootstrap.py` + documented manual setup
 4. Blog — keep the Wispr screenshot before the blog
 
 Never cut: cross-app handoff, refusal moment, loop closing back to the reporter, fresh-clone test.
