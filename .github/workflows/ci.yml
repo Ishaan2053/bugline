@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        project: [demo-app, agents/common, agents/frontdesk]
+        project: [demo-app, agents/common, agents/frontdesk, agents/coder]
     defaults:
       run:
         working-directory: ${{ matrix.project }}

@@ -15,6 +15,7 @@ __pycache__/
 *.sqlite3
 calls.log
 agents/frontdesk/state/
+agents/coder/state/
 demo-app/scratch/
 
 # editors / OS
