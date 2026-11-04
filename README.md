@@ -170,7 +170,7 @@ python agent.py --help
 Expect `8 passed` for the demo app and `37 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
 `--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
-`agents/common` (`12 passed`), `agents/coder` (`13 passed`) and `scripts` (`5 passed`).
+`agents/common` (`12 passed`), `agents/coder` (`13 passed`) and `scripts` (`13 passed`).
 
 ### Part B: Switch, Telegram and Slack
 
@@ -213,7 +213,28 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
    ```
 
    Then type `!follow-ups off` in both rooms, so agents act only when named.
-5. Run the seeded paths in
+5. **Before each recording.** Stop the agents, reset the demo, start the agents, then check:
+
+   ```powershell
+   agents\frontdesk\.venv\Scripts\python scripts\reset_demo.py --dry-run   # read the plan first
+   agents\frontdesk\.venv\Scripts\python scripts\reset_demo.py
+   # start the three agents as in step 4, then:
+   agents\frontdesk\.venv\Scripts\python scripts\doctor.py
+   ```
+
+   ```bash
+   agents/frontdesk/.venv/bin/python scripts/reset_demo.py --dry-run
+   agents/frontdesk/.venv/bin/python scripts/reset_demo.py
+   agents/frontdesk/.venv/bin/python scripts/doctor.py
+   ```
+
+   `reset_demo.py` deletes the front desk's tickets (the next one is `BL-1`), resets both coder
+   clones to `origin/main`, closes ticket PRs and deletes their branches except `--keep` (default
+   #18 and #19, the PRs this README cites), and recreates the demo app's container. It refuses
+   while an agent is connected. `doctor.py` prints one PASS or FAIL line per thing the demo needs:
+   server, bridges, rooms, agent connections, keys, roles, access rules, `claude`, `gh`, `git` and
+   the clones. Record only when every line is PASS. `--gemini` adds one model call.
+6. Run the seeded paths in
    [switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
 
 ## The workflow, step by step
@@ -345,7 +366,8 @@ agents/common/       shared by all three agents: Switch protocol client, ticket 
 agents/frontdesk/    the front desk: handlers, Gemini calls, SQLite store, Dockerfile
 agents/coder/        the reproducer and the fixer: one program that runs Claude Code headless
 switch/              room template, room instructions, docs/ (the bugline-kit documents), agent-briefs/
-scripts/             bootstrap.py: everything in Switch after the chat-app connections, idempotent
+scripts/             bootstrap.py: everything in Switch after the chat-app connections, idempotent;
+                     doctor.py: checks before a recording; reset_demo.py: back to BL-1
 docs/                switch-setup.md (Switch walkthrough and troubleshooting), build-journal.md
 docker-compose.yml   demo app; front desk under the `agents` profile
 CLAUDE.md            project context for coding agents, including the seeded-faults table
