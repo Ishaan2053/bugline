@@ -1,59 +1,54 @@
 # Setting up Bugline in Switch
 
-The ordered checklist for standing up both rooms, all three agents and the links between them, by
-hand, in Switch Console, the Gateway, Telegram and Slack. Do the steps in order: later steps need
-what earlier ones make.
+How to stand up both rooms, all three agents and everything between them. Part A is done by hand
+in Telegram, Slack and Switch Console. Part B is one script. Part C starts the agents.
 
-Nothing here has been run end to end yet. Untagged steps follow the Switch docs closely.
-**(unverified)** marks steps where the docs are silent or the behaviour is inferred. Fix this file
-when a live run shows otherwise.
+Parts A and C and the smoke run were done live on Nov 4, 2026, with Switch Console 0.40.1 and
+server switch-core 0.31.0 on Windows 11. That day the part B steps were done with single Gateway
+API calls; `scripts/bootstrap.py` was written from those calls and then run against the finished
+setup, where it found everything and added `bugline-kit`. Its create paths are covered by unit
+tests against a fake server, not by a fresh server.
 
 What goes where:
 
 | Thing | Made by |
 | --- | --- |
-| `bugline-support` (Telegram) | Adding the bot to the Telegram group (step 2) |
-| `bugline-frontdesk` | Its own `--register` run (step 5) |
-| `bugline-eng` (Slack), `bugline-repro`, `bugline-fixer`, roles, repo reference | The room template `switch/bugline.template.yaml` (step 8), or by hand (step 8b) |
-| Room links, room instructions, front desk aliases, access rules, `bugline-kit` | `scripts/bootstrap.py` (step 10) |
-| Fixer access rule, front desk "Anyone", documents, `bugline-kit` | By hand (steps 6, 9, 11) |
-
-## 0. Before you start
-
-- Switch Console installed and a local server running (Home shows it), with agent management on.
-- Settings → Agent providers shows **Signed in** for Claude Code or OpenCode. If it says "CLI not
-  installed" after installing, close the Switch Console window (on Windows that quits it) and
-  reopen it.
-- Two Telegram accounts, each with a username (a phone number is not enough): one for you, one
-  as the second end user.
-- A Slack workspace you own, and a second Slack account in it for the refusal test.
-- Python 3.14, Git, the GitHub CLI (`gh`), and a Google AI Studio key for the front desk.
+| Telegram connection, `bugline-support` room | By hand: the bot joins the Telegram group (part A) |
+| Slack connection, your linked accounts | By hand in Console (part A) |
+| Registration key, the three agents, `bugline-eng` and its Slack channel, roles, the `bugline-repo` reference, agents in rooms, access rules, room instructions, links, `@frontdesk` aliases, `bugline-kit`, the room ids in both `.env` files | `scripts/bootstrap.py` (part B) |
+| `!follow-ups off` in both rooms, starting the agents | By hand (part C) |
 
 > **Never disconnect a messaging app in Switch.** Disconnecting deletes every Switch room on that
 > app, with its history, and cannot be undone. To change a token, edit the connection; do not
 > disconnect and reconnect.
 
-## 1. Telegram bot and group
+## 0. Before you start
+
+- Switch Console installed, with its local server running (Console Home shows it).
+- Python 3.14, Git, and a Google AI Studio key for the front desk.
+- Claude Code signed in (`claude`), and the GitHub CLI signed in (`gh auth login`) with your git
+  name and email set. The fixer opens PRs with these logins.
+- A Telegram account with a username, and a Slack workspace you own.
+
+## Part A: the chat apps, by hand
+
+### 1. Telegram bot and group
 
 1. In Telegram, open `@BotFather` and send `/newbot`. Give it a display name and a username ending
    in `bot`. Save the token straight away.
 2. Turn off group privacy **before** adding the bot anywhere: `/mybots` → your bot → **Bot
    Settings** → **Group Privacy** → **Turn off**. Telegram reads this when the bot joins.
-3. Create a Telegram group named `bugline-support` with your two accounts in it. Do not add the
-   bot yet.
+3. Create a Telegram group named `bugline-support`. Do not add the bot yet.
 
-## 2. Connect Telegram and make `bugline-support`
+### 2. Connect Telegram
 
 1. Switch Console → server **Home** → **Messaging apps** → **Connect** → **Telegram**.
 2. Fill in **Name** (`Bugline Telegram`), **Bot Token** and **Bot Username**. Select **Connect**.
-3. In the Telegram group, add the bot as a member. It needs no admin rights. Switch creates the
-   room and it shows under **Your Rooms**.
-4. Check the room's name in Console. If it is not `bugline-support`, note its id for step 10
-   **(unverified: the room is expected to take the group's title)**.
-5. Post any message in the group, then Console Home → **Link your Telegram account** → **Link
-   account**. Typing `/` in the group should now list the Switch commands.
+3. Add the bot to the group, then post any message there. Switch creates a room named after the
+   group, `bugline-support`.
+4. Console Home → **Link your Telegram account** → **Link account**.
 
-## 3. Connect Slack
+### 3. Connect Slack
 
 1. At https://api.slack.com/apps → **Create New App** → **From an app manifest**. Paste the
    manifest from https://docs.switchagents.ai/switch-rooms/deploy/messaging-apps/slack.md. If the
@@ -65,306 +60,125 @@ What goes where:
 5. Switch Console → **Home** → **Messaging apps** → **Connect** → **Slack**. Fill in **Name**
    (`Bugline Slack`), **Bot Token**, **App-level token**, **Workspace Id**. Leave **Allow creating
    channels from Switch** on. Select **Connect**.
-6. **Link your Slack account** → **This is me**. The template in step 8 puts you in the room
-   through this link, and the fixer's access rule in step 9 depends on it.
-7. Do **not** create `#bugline-eng` by hand if you will use the template; the template creates the
-   channel **(unverified: the channel is expected to take the room's name)**.
+6. **Link your Slack account** → **This is me**. You are the owner of the agents bootstrap
+   registers, and the fixer admits only its owner, so your Slack messages must map to your Switch
+   user.
 
-## 4. Find the bridge URL
+Do not create `#bugline-eng` by hand; bootstrap makes the room and its channel.
 
-Agents talk to the bridge (the API), not the Gateway web page. Switch Console picks free ports, so
-look them up **(unverified: a Console server started without Docker will not show in `docker ps`)**.
+## Part B: `scripts/bootstrap.py`
 
-PowerShell:
+### 4. Agent folders
+
+The front desk and the coders run natively, with their own venvs. The front desk's venv also runs
+bootstrap.
 
 ```powershell
-docker ps --format "table {{.Names}}\t{{.Ports}}"
-# For each published 127.0.0.1 port:
-Invoke-RestMethod http://127.0.0.1:<port>/health
+cd agents\frontdesk
+py -3.14 -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+Copy-Item .env.example .env   # set GEMINI_API_KEY; bootstrap fills in the Switch values
+cd ..\coder
+py -3.14 -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+cd ..\..
+git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-repro\bugline
+git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-fixer\bugline
+# in each clone's demo-app\: py -3.14 -m venv .venv; .\.venv\Scripts\pip install -r requirements-dev.txt
 ```
 
-Bash:
+More on each agent's settings: [agents/frontdesk/README.md](../agents/frontdesk/README.md),
+[agents/coder/README.md](../agents/coder/README.md).
 
-```bash
-docker ps --format "table {{.Names}}\t{{.Ports}}"
-curl -s http://127.0.0.1:<port>/health
-```
+### 5. Run bootstrap
 
-The bridge answers `{"status": "ok"}` (PowerShell shows `status : ok`). A 401 means the right
-host and the wrong path. The Gateway opens from Console Home → **Full admin interface** → **Open**;
-its address bar gives the Gateway's host and port, which is usually not the bridge.
-
-## 5. Register the front desk
-
-1. Gateway → **API Keys** → **Create Registration Key**, label `bugline-frontdesk`. You own every
-   agent registered with it, which is what lets the reproducer accept the front desk as "my
-   agent". Do not use the server's bootstrap `AGENT_REGISTRATION_TOKEN`.
-2. Register once. The server returns the id and API key only once; `--register` saves both to
-   `agents/frontdesk/state/credentials.json` (gitignored) and refuses to run if that file exists.
-   Registering the same name again fails with 409. Full details and environment variables:
-   [agents/frontdesk/README.md](../agents/frontdesk/README.md).
-
-   PowerShell:
-
-   ```powershell
-   cd agents\frontdesk
-   py -3.14 -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   Copy-Item .env.example .env   # fill in the bridge URL, registration key and Gemini key
-   python agent.py --register
-   ```
-
-   Bash:
-
-   ```bash
-   cd agents/frontdesk
-   python3.14 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   cp .env.example .env   # fill in the bridge URL, registration key and Gemini key
-   python agent.py --register
-   ```
-
-3. Do not start the agent yet. It must be a member of both rooms first, or the server refuses its
-   connection (close code 4403).
-
-## 6. Let anyone talk to the front desk
-
-Switch Console → **Your Agents** → `bugline-frontdesk` → **General** → **Who can talk to your
-agent** → **Anyone**.
-
-Telegram users have no Switch account, so any narrower setting refuses them. An agent cannot
-change this setting for itself (the API answers 403), which is why it is done here.
-
-## 7. Put the front desk in `bugline-support`
-
-In the Telegram group:
-
-```
-!invite-agent @bugline-frontdesk
-!set-alias @bugline-frontdesk @frontdesk
-```
-
-Telegram also takes `/invite_agent @bugline-frontdesk` **(unverified: whether `!` commands work as
-typed in Telegram, or only the `/` forms)**. Console's room form lists only agents Console created,
-so use the command or the Gateway room page. Users type `@frontdesk` in full; Telegram does not
-autocomplete agent names.
-
-## 8. Make `bugline-eng` from the template
-
-Needs: the front desk registered (step 5), your Slack account linked (step 3.6), the provider
-signed in, and this machine online.
-
-1. Make the working directories, and save the agents a slow first clone during the demo:
-
-   ```powershell
-   New-Item -ItemType Directory -Force C:\bugline-agents\bugline-repro, C:\bugline-agents\bugline-fixer
-   git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-repro\bugline
-   git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-fixer\bugline
-   ```
-
-2. Switch Console → **Templates** → **Import template** → `switch/bugline.template.yaml`.
-3. Open it → **Use template**. Pick the Slack connection for **bridge**. Under advanced, check
-   **directory** is `C:\bugline-agents\{agent}` and **provider** is the one signed in. Keep
-   **team** as `bugline`. Select **Create all**.
-4. If it fails, nothing is created. The error names the cause (`provider_login_missing`,
-   `controller_offline`, `name_taken`, ...). Fix it and run again.
-5. The kickoff message asks `bugline-repro` and `bugline-fixer` to take their roles and say hello.
-   Wait for both replies.
-
-To try the template without touching the real names, run it with **team** `bltest`, then archive
-the room and delete the two `bltest-` agents.
-
-The template's comments list what it cannot do. Two things to check after the run
-**(unverified)**: that `!list-aliases` in `bugline-eng` shows `frontdesk` (the alias key uses a
-parameter), and that the room got the `bugline-repo` reference. Step 10 sets both again if not.
-
-### 8b. Without the template
-
-1. In Slack, create the public channel `bugline-eng` and run `/invite @<your Switch app name>` in
-   it. The room appears in Console **(unverified)**.
-2. Create the two agents: Switch Console → **Your Agents** → the dashed **+** card. Name
-   `bugline-repro` / `bugline-fixer`, a one-line description, **Run location** This computer,
-   **Directory** `C:\bugline-agents\<name>` (it cannot be changed later), the signed-in provider,
-   default advanced settings, **Who can talk to your agent** left at **Me and my agents**. Select
-   **Add agent**.
-3. In `#bugline-eng`:
-
-   ```
-   !invite-agent @bugline-frontdesk
-   !invite-agent @bugline-repro
-   !invite-agent @bugline-fixer
-   ```
-
-4. Gateway → the room's page → **Add role**, twice: `reproducer` (shared) and `fixer`
-   (exclusive). Copy each role's instructions from the `roles:` section of
-   `switch/bugline.template.yaml`.
-5. Ask each agent to take its role:
-   `@bugline-repro take the reproducer role in this room.` and
-   `@bugline-fixer take the fixer role in this room.`
-
-## 9. Briefs, the fixer's access rule, and `gh`
-
-1. Switch Console → **Your Agents** → `bugline-repro` → **Agent instructions**: paste everything
-   below the line in [switch/agent-briefs/reproducer.md](../switch/agent-briefs/reproducer.md).
-   Do the same for `bugline-fixer` with
-   [switch/agent-briefs/fixer.md](../switch/agent-briefs/fixer.md). This replaces the short
-   pointers the template set.
-2. `bugline-repro` keeps **Me and my agents**. That admits you (the PM) and `bugline-frontdesk`,
-   because you own both.
-3. `bugline-fixer` → **Who can talk to your agent** → **Custom rules**, one rule:
-   - Rooms: `bugline-eng`
-   - Room groups: any
-   - People: your own Switch user, named explicitly (not "owner"; see step 13 for why)
-   - Agents: none
-
-   Anyone not named is refused, and nothing warns you about who you left out. Your Slack account
-   must be linked (step 3.6), or you are refused too **(unverified: the exact field names on the
-   rule form)**.
-4. The fixer opens PRs with your GitHub login. In a terminal as the same Windows user:
-
-   ```powershell
-   gh auth login
-   gh auth status
-   git config --global user.name
-   git config --global user.email
-   ```
-
-   Switch Console agents inherit your `gh` login. Check the git name and email are yours; the
-   fixer commits with them.
-
-## 10. Links, room instructions, aliases, access rules and `bugline-kit`: `scripts/bootstrap.py`
-
-`scripts/bootstrap.py` does steps 5 to 11 in one idempotent run through the Gateway API. Its
-docstring lists every step; it prints "created", "exists" or "skipped (why)" for each.
+From the repo root:
 
 ```powershell
 agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --dry-run
 agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py
 ```
 
+`--dry-run` logs in and reads, and prints every write instead of sending it. The real run prints
+one line per thing: `created`, `updated`, `exists` or `skipped (why)`. Run it again any time; a
+second run on a finished setup prints only `exists`. What it does, in order, is in the script's
+docstring. In short:
+
+1. Reads the API port from Console's `ports.json` and the local admin login from Console's
+   `switch-core.env`, checks `/health`, and logs in.
+2. Uses the registration key in `agents/frontdesk/.env`, or creates one and saves it there.
+3. Registers `bugline-frontdesk`, `bugline-repro` and `bugline-fixer` if their
+   `credentials.json` is missing.
+4. Finds `bugline-support` on the Telegram connection. If it is not there, it stops and tells you
+   to add the bot to the group and post once.
+5. Makes `bugline-eng` on the Slack connection from `switch/bugline.template.yaml`.
+6. Writes `SWITCH_API_URL` and the room ids into `agents/frontdesk/.env` and `agents/coder/.env`.
+7. Puts the front desk in both rooms and the coders in `bugline-eng`.
+8. Access rules: the front desk open to anyone (Telegram users have no Switch account), the
+   reproducer its owner and the owner's agents (the PM and the front desk), the fixer its owner
+   only, in `bugline-eng` only.
+9. Room instructions from `switch/room-instructions-*.md`, the links (`bugline-support` →
+   `bugline-eng` "escalates to", back "supports"), and the alias `@frontdesk` in both rooms.
+10. `bugline-kit`: the three files in `switch/docs/` as library documents (updated when a file
+    changes), the `bugline-repo` reference, attached to both rooms.
+
+On a team server, set `SWITCH_API_URL`, `SWITCH_ADMIN_EMAIL` and `SWITCH_ADMIN_PASSWORD` first.
+If you have two Slack connections, pass `--slack-connection "<name>"`; if the Telegram room has
+another name, pass `--support-room <name or id>`.
+
 A link tells agents the other room exists. It does not let anyone into it.
 
-## 11. Shared documents and the `bugline-kit` package
+## Part C: start the agents
 
-Packages hold only library documents and references, and only a person can make them, in the
-Gateway **(unverified: exact menu names)**.
+### 6. Start the three agents
 
-1. Gateway → **Resources** → documents: create three library documents. Name each after its file
-   and paste the file's text as the content:
-   - `intake-rules.md` from `switch/docs/intake-rules.md`
-   - `repro-checklist.md` from `switch/docs/repro-checklist.md`
-   - `fix-policy.md` from `switch/docs/fix-policy.md`
-2. Create the package `bugline-kit` with the three documents and the `bugline-repo` reference.
-3. Attach `bugline-kit` to `bugline-eng` and `bugline-support` from each room's page.
+One terminal each, from the repo root:
 
-The files in `switch/docs/` are the source. When one changes, paste it into its library document
-again. The front desk reads `intake-rules.md` from the repo, not from Switch.
-
-## 12. Start the front desk and quiet the rooms
-
-1. Start the front desk (details in [agents/frontdesk/README.md](../agents/frontdesk/README.md)):
-
-   ```powershell
-   cd agents\frontdesk
-   .\.venv\Scripts\Activate.ps1
-   python agent.py
-   ```
-
-   ```bash
-   cd agents/frontdesk && source .venv/bin/activate && python agent.py
-   ```
-
-2. In both rooms, so agents act only when named:
-
-   ```
-   !follow-ups off
-   ```
-
-3. Check, in `#bugline-eng`:
-   - `!roles`: `reproducer` (shared) held by `bugline-repro`, `fixer` (exclusive) held by
-     `bugline-fixer`.
-   - `!list-aliases`: `frontdesk` → `bugline-frontdesk`. Same in `bugline-support`.
-   - `!list-agents`: all three agents.
-   - `!list-references` and `!list-documents`: `bugline-repo` and the three documents.
-4. In the Gateway, each room's page lists its link with the right label.
-
-## 13. The refusal test
-
-From the second Slack account, in `#bugline-eng`:
-
-```
-@fixer fix BL-1 now
+```powershell
+cd agents\frontdesk; .\.venv\Scripts\python agent.py
+cd agents\coder; $env:CODER_ROLE = "reproducer"; .\.venv\Scripts\python agent.py
+cd agents\coder; $env:CODER_ROLE = "fixer"; .\.venv\Scripts\python agent.py
 ```
 
-Switch, not the fixer, posts the refusal in the fixer's name. The fixer's code does nothing. The
-wording depends on the sender's account **(unverified: test once before recording)**:
+Each coder logs `holding the role reproducer` (or `fixer`), and Switch posts "assumed the
+`reproducer` role" in `bugline-eng` the first time.
 
-- Second account linked to a different Switch user, or a rule that names your user explicitly:
-  "You're not permitted to direct messages to me in this room — my operator has restricted who
-  can address me here."
-- Second account not linked, and a rule that uses "owner": "I only take instructions from my
-  owner, and this chat account isn't linked to a Switch user yet ...". This one is said only once;
-  later messages from that account get no reply at all.
+### 7. Quiet the rooms
 
-For the video you want the first message, so name your user explicitly in the rule (step 9.3).
-If `@fixer` gets no reply at all, the role has no live holder (step 14); use `@bugline-fixer`
-instead, which is refused the same way.
+In both rooms, so agents act only when named:
 
-## 14. When a role mention reaches nobody
+```
+!follow-ups off
+```
 
-`@reproducer` and `@fixer` reach an agent only while a running session holds the role. When the
-session ends (idle, `!reset`, the machine restarts), the role is released, `!roles` shows it free,
-and a role mention goes nowhere with no error. That includes the `@reproducer` line in the front
-desk's tickets.
+Check in `#bugline-eng`: `!roles` shows `reproducer` held by `bugline-repro` and `fixer` held by
+`bugline-fixer`.
 
-Workaround:
-
-1. Before every demo run, `!roles` in `#bugline-eng`. If a role is free, wake the agent and ask
-   again: `@bugline-repro take the reproducer role in this room.` /
-   `@bugline-fixer take the fixer role in this room.` Then `!roles` again.
-2. During a run, if a role mention gets no reply within a minute, address the agent by name in the
-   same thread: `@bugline-repro please reproduce BL-1.` or
-   `@bugline-fixer go on BL-1, keep it to the share handler, add a regression test`.
-3. Find out how long a role lasts: take it, wait ten minutes, run `!roles`
-   **(unverified: the session lifetime of a Console-managed agent is not documented)**.
-
-## 15. Smoke run: the six seeded paths
+## Smoke run: the seeded paths
 
 The paths are the seeded-faults table in [CLAUDE.md](../CLAUDE.md#demo-app-expense-splitter-demo-app).
-Run them in this order, because path 5 needs `BL-1` open. "User A" and "user B" are your two
-Telegram accounts in `bugline-support`; "PM" is you in `#bugline-eng`. Keep
+These are the messages that passed on Nov 4. "User" is you in `bugline-support`; "second user" is
+another person (on Nov 4, a second Switch user, `sam`, posting through the Gateway chat API);
+"PM" is you in `#bugline-eng`. In Telegram the live messages named the agent as
+`@bugline-frontdesk @<bot username>`; `@frontdesk` worked the same from the chat API. Keep
 `agents/frontdesk/calls.log` open to count model calls.
 
-**Path 4: vague report.** User A:
+**Path 4, then path 1: vague report, then the full loop.** User:
 
 ```
-@frontdesk the app is broken
+@frontdesk the share link is broken.
 ```
 
-Expect: the front desk asks once for the missing details (steps, what you expected, what
-happened, the group). No ticket. Nothing in `#bugline-eng`.
-
-**Path 1: share link error, the full loop.** User A, in a new message:
+Expect: "Thanks. To pass this to the team I need the steps you took and your group id." No ticket.
+Then, in the same thread:
 
 ```
-@frontdesk I opened the share link /share/goa-trip-share for group 1 and got "Internal Server Error". I expected the summary of who paid what.
+@frontdesk group 1, I opened the share link goa-trip-share expecting the summary but got Internal Server Error. It did not specify what error.
 ```
 
-Expect: user A is told the ticket id `BL-1`. In `#bugline-eng` the ticket appears in the shape in
-`switch/docs/intake-rules.md`, ending with `@reproducer`. The reproducer replies in that thread
-with `Verdict: reproduced` and a cause in `demo-app/app/main.py`, `share()`.
-
-**Path 5: duplicate.** While `BL-1` is open, user B:
-
-```
-@frontdesk the share link for group 1 is broken for me too, it says Internal Server Error instead of the summary
-```
-
-Expect: user B is told it is already tracked as `BL-1`. Nothing new in `#bugline-eng`.
-
-**Refusal.** Do step 13 now.
+Expect: "Thanks, logged as BL-1 and passed to the team." In `#bugline-eng`, `BL-1` in the shape in
+`switch/docs/intake-rules.md`, addressed to `@reproducer`. The reproducer posts "Working on it",
+then `Verdict: reproduced` with the `ZeroDivisionError` in `demo-app/app/main.py`, `share()`.
 
 **Approve and close.** PM, in the `BL-1` thread:
 
@@ -372,45 +186,101 @@ Expect: user B is told it is already tracked as `BL-1`. Nothing new in `#bugline
 @fixer go on BL-1, keep it to the share handler, add a regression test
 ```
 
-Expect: the fixer names its branch `fix/demo-app-bl-1-...`, runs `pytest -q`, opens a PR titled
-`BL-1: ...` and posts `@frontdesk BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/<n>`.
-In `bugline-support`, the front desk tells user A and user B that `BL-1` is fixed, with the link.
-Do not merge the PR until the run is recorded.
+Expect, in about a minute: `@frontdesk BL-1 is fixed: https://github.com/<you>/bugline/pull/<n>`,
+then "Closed BL-1, telling the reporter." and, in `bugline-support`, "<you>, BL-1 is fixed: <PR
+link>". Do not merge the PR; it removes the seeded fault.
 
-**Path 2: totals off by a paisa.** User A:
-
-```
-@frontdesk in group 1 the balances don't add up. Total spent is 9100 but the three "owes" amounts add to 9099.99. I expected them to add up to the total.
-```
-
-Expect: `BL-2` in `#bugline-eng`; the reproducer shows the exact numbers from
-`GET /groups/1/balances` and names the rounding in `demo-app/app/money.py`. Approving a fix is
-optional.
-
-**Path 3: not a bug.** User A:
+**Path 3: not a bug.** User:
 
 ```
-@frontdesk it says I owe money I already paid. Why?
+@frontdesk it says I owe money for the Goa trip dinner, but I already paid for it myself. Why?
 ```
 
-Expect: an answer from the user guide in `demo-app/README.md` (the expense has the wrong payer, and
-how to correct it). Nothing in `#bugline-eng`.
+Expect: an answer from `demo-app/README.md` (the expense has the wrong payer; re-add it). Nothing in
+`#bugline-eng`.
 
-**Path 6: off-topic.** User B:
+**A request.** `@frontdesk can you add a way to edit an expense?` → "Thanks, I've noted that as a
+request for the team." Nothing in `#bugline-eng`.
+
+**Path 6: off-topic.** `@frontdesk what's a good phone under 20k?` → "Sorry, that's not something
+I can help with here." A follow-up in the same thread (`@frontdesk hello?`) gets no reply and no
+model call.
+
+**Path 2: a paisa short.** User:
 
 ```
-@frontdesk can you recommend a good pizza place in Goa?
+@frontdesk group 1 settle-up is wrong. Steps: opened Settle up for the Goa trip. Expected: the payments to add up to what we spent. Actual: we spent 9100 but the shares only add up to 9099.99, a paisa goes missing on the 1000 dinner split three ways.
 ```
 
-Expect: one polite line. A follow-up from user B in the same thread gets no reply.
+Expect: `BL-2`; the reproducer shows `owes` adding to 9099.99 and Ravi getting 666.66 of 666.67,
+and names `split_equal()` in `demo-app/app/money.py`.
 
-**Could not reproduce.** PM, in `#bugline-eng`:
+**Path 5: duplicate.** While `BL-2` is open, second user:
 
 ```
-@bugline-repro please reproduce: GET /groups/1/settle returns 500 for group 1
+@frontdesk for group 1 the settle-up comes out one paisa less than the total we spent. I opened Settle up and expected it to match 9100, but it adds to 9099.99.
 ```
 
-Expect: `Verdict: not reproduced`, with what it tried, and no cause offered.
+Expect: "Already tracked as BL-2, I'll tell you when it's fixed." Nothing new in `#bugline-eng`.
 
-After the run, note the model-call count from `calls.log` and the wall time in
-`docs/build-journal.md`.
+**Burst.** Second user sends three questions within a minute (`what does net mean in balances?`,
+`how does settle up decide who pays whom?`, `can anyone open a share link?`). The first two are
+answered; the third gets "Give me a minute, then send that again." with no model call.
+
+**Refusal.** Second user, in `#bugline-eng`:
+
+```
+@fixer fix BL-2 now
+```
+
+Expect, posted by Switch in the fixer's name: "@sam You're not permitted to direct messages to me
+in this room — my operator has restricted who can address me here." The fixer's log shows
+nothing.
+
+**Could not reproduce.** PM:
+
+```
+@reproducer a user says group 1's balances page shows amounts in dollars instead of rupees. Can you reproduce that?
+```
+
+Expect: `Verdict: not reproduced`, what it tried, and a request for what the user opened.
+
+**Close with subscribers.** PM, in the `BL-2` thread:
+`@fixer go on BL-2, keep it to the equal split in demo-app/app/money.py so the shares add up to the amount, and add a regression test`.
+Expect a PR, then "BL-2 is fixed" in `bugline-support` for both the reporter and the second user.
+
+## Troubleshooting
+
+- **Which URL is the server?** Console picks the ports when it starts the server and writes them
+  to `%APPDATA%\switchdash\local-switch-server\ports.json`, for example
+  `{"gateway": 50072, "api": 50073, ...}`. The API (the "bridge") is `api`:
+  `GET http://127.0.0.1:<api>/health` answers `{"status": "ok"}`. The ports can change when Console
+  restarts; run bootstrap again, then restart the agents. Console runs the server natively, not in
+  Docker, so `docker ps` does not show it.
+- **There is no Gateway page.** In native mode the server serves no dashboard: Console hides
+  "Full admin interface", and the gateway port answers 404 for every path. The Gateway API still
+  works under `<api>/gateway/...`, which is what bootstrap uses. It signs in as the local admin
+  whose login Console keeps in `%APPDATA%\switchdash\local-switch-server\native\run\switch-core.env`.
+- **Providers say "Not supported here".** Console cannot run managed coding agents on Windows
+  ("SDK sessions require a POSIX SSH execution host"). That is why the reproducer and the fixer
+  are custom agents in `agents/coder`. The template has no `agents:` block for the same reason;
+  the server refuses one ("Unknown top-level key(s): agents").
+- **A mention reached nobody.** On Slack's free plan Switch cannot make agent user groups
+  ("paid_teams_only ... agents remain addressable by typing their name"), so there is no `@`
+  autocomplete. Type names exactly: `@reproducer`, not `@repoducer`. A misspelled name fails
+  silently.
+- **`@reproducer` or `@fixer` gets no reply.** A role reaches an agent only while its program is
+  running and holds the role. Check `!roles`; if a role is free, start (or restart) that coder. You
+  can always address the agent by name, `@bugline-repro` or `@bugline-fixer`.
+- **The refusal wording.** For a second Switch user, the fixer's refusal is "You're not permitted to
+  direct messages to me in this room — my operator has restricted who can address me here." A chat
+  account that is not linked to any Switch user may get a different message, said only once
+  (from the Switch docs; not tested here).
+- **Every shell command of a coder is refused.** Claude Code runs in `dontAsk` mode, where each part
+  of a chained command must be allowed. `agents/coder/config.py` allows `Bash` and uses deny lists;
+  if you narrow it, test a real ticket again.
+- **Bootstrap stops at the Telegram room.** The room appears only after the bot is in the group and
+  someone has posted there. If the group has another name, pass `--support-room`.
+- **Bootstrap says credentials are missing for a registered agent.** The server shows an agent's
+  API key once, at registration. Restore `credentials.json` from where you ran it first, or delete
+  the agent in Console and run bootstrap again.

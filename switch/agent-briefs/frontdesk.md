@@ -11,8 +11,8 @@ and the other agents can expect from it. If the code and this brief disagree, on
   `google-genai`.
 - In both rooms it has the alias `@frontdesk`. It holds no role: a Switch agent holds one role
   across all its rooms, so a role would not work in two rooms. The alias does.
-- Who may address it: **Anyone**, set by the owner in Switch Console. Telegram users who have no
-  Switch account must reach it.
+- Who may address it: **Anyone**. It is an access rule on the agent, set by its owner
+  (`scripts/bootstrap.py` sets it). Telegram users who have no Switch account must reach it.
 - Members of `bugline-support` (Telegram) and `bugline-eng` (Slack).
 
 ## In `bugline-support`
