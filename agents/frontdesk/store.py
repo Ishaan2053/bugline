@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
     pr_url          TEXT,
     created_at      TEXT NOT NULL,
-    closed_at       TEXT
+    closed_at       TEXT,
+    closed_by       TEXT
 );
 CREATE TABLE IF NOT EXISTS subscribers (
     ticket_id TEXT NOT NULL REFERENCES tickets (ticket_id),
@@ -79,6 +80,7 @@ class Ticket:
     pr_url: str | None
     created_at: str
     closed_at: str | None
+    closed_by: str | None
 
 
 @dataclass(frozen=True)
@@ -113,13 +115,28 @@ class Store:
         self._db = sqlite3.connect(path)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(SCHEMA)
+        self._add_missing_columns()
         self._clock = clock
+
+    def _add_missing_columns(self) -> None:
+        """Bring a frontdesk.db made before `closed_by` existed up to SCHEMA.
+
+        CREATE TABLE IF NOT EXISTS leaves an existing table as it is, so a new column needs this.
+        """
+        columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tickets)")}
+        if "closed_by" not in columns:
+            with self._db:
+                self._db.execute("ALTER TABLE tickets ADD COLUMN closed_by TEXT")
 
     def close(self) -> None:
         self._db.close()
 
+    def utc_now(self) -> datetime:
+        """The store's clock as a UTC datetime. Ticket ages on the status board use it."""
+        return datetime.fromtimestamp(self._clock(), UTC)
+
     def _iso_now(self) -> str:
-        return datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+        return self.utc_now().isoformat(timespec="seconds")
 
     # --- tickets --------------------------------------------------------------------------------
 
@@ -168,6 +185,15 @@ class Store:
         rows = self._db.execute("SELECT * FROM tickets WHERE status = 'open' ORDER BY n").fetchall()
         return [_ticket(row) for row in rows]
 
+    def list_tickets(self, limit: int) -> list[Ticket]:
+        """The newest `limit` tickets, open or closed, newest first. The status board shows them."""
+        rows = self._db.execute("SELECT * FROM tickets ORDER BY n DESC LIMIT ?", (limit,))
+        return [_ticket(row) for row in rows.fetchall()]
+
+    def count_tickets(self) -> int:
+        (count,) = self._db.execute("SELECT COUNT(*) FROM tickets").fetchone()
+        return count
+
     def subscribe(
         self,
         ticket_id: str,
@@ -184,26 +210,31 @@ class Store:
                 (ticket_id, user_id, room_id, name, thread_id),
             )
 
-    def close_ticket(self, ticket_id: str, pr_url: str) -> list[Subscriber]:
-        """Mark a ticket fixed and return who to notify: the reporter, then each subscriber once.
-
-        Returns an empty list if the ticket is unknown or already closed, so a repeated close
-        message never notifies anyone twice.
-        """
-        with self._db:
-            updated = self._db.execute(
-                "UPDATE tickets SET status = 'closed', pr_url = ?, closed_at = ?"
-                " WHERE ticket_id = ? AND status = 'open'",
-                (pr_url, self._iso_now(), ticket_id),
-            ).rowcount
-        if not updated:
-            return []
+    def subscribers(self, ticket_id: str) -> list[Subscriber]:
+        """Who to tell about a ticket: the reporter, then each subscriber once."""
         rows = self._db.execute(
             "SELECT user_id, room_id, name, thread_id FROM subscribers WHERE ticket_id = ?"
             " ORDER BY rowid",
             (ticket_id,),
         ).fetchall()
         return [Subscriber(*row) for row in rows]
+
+    def close_ticket(
+        self, ticket_id: str, pr_url: str, closed_by: str | None = None
+    ) -> list[Subscriber]:
+        """Mark a ticket fixed and return its `subscribers`, who are to be notified.
+
+        `closed_by` names who closed it, for the status board. Returns an empty list if the
+        ticket is unknown or already closed, so a repeated close message never notifies anyone
+        twice.
+        """
+        with self._db:
+            updated = self._db.execute(
+                "UPDATE tickets SET status = 'closed', pr_url = ?, closed_at = ?, closed_by = ?"
+                " WHERE ticket_id = ? AND status = 'open'",
+                (pr_url, self._iso_now(), closed_by, ticket_id),
+            ).rowcount
+        return self.subscribers(ticket_id) if updated else []
 
     # --- drafts ---------------------------------------------------------------------------------
 
@@ -300,4 +331,5 @@ def _ticket(row: sqlite3.Row) -> Ticket:
         pr_url=row["pr_url"],
         created_at=row["created_at"],
         closed_at=row["closed_at"],
+        closed_by=row["closed_by"],
     )
