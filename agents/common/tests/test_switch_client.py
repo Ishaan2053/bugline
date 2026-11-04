@@ -90,6 +90,7 @@ def test_pong_carries_cursor_and_only_addressed_messages_are_queued() -> None:
         "support", "room-s", "@switch-user-ab12:localhost", "Asha", queued[0].body, "m12", None
     )
     assert conn.rooms == ["room-s"] and conn.generation == 3
+    assert conn.connected.is_set()  # what an agent waits on to take its role
     request = opens[0]
     assert request.headers["Authorization"] == "Bearer key-1"
     assert urlsplit(request.path).path == "/agents/agent-1/connection/ws"
