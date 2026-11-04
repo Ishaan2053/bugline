@@ -46,11 +46,15 @@ FIXED = "{name}, {ticket_id} is fixed: {pr_url}"
 # --- eng room -------------------------------------------------------------------------------
 CLOSED = "Closed {ticket_id}, telling the reporter."
 NOT_OPEN = "{ticket_id} is not an open ticket, so there is nothing to close."
+# The close line, as the reproducer posts it (switch/docs/repro-checklist.md, "Verify a fix").
+_CLOSE_LINE = f"`Verified {TICKET_PREFIX}-n: <PR link>`"
 ENG_HELP = (
-    f"I bring bug reports here and close them: mention me with the ticket id"
-    f" ({TICKET_PREFIX}-n) and the PR link. `{STATUS_COMMAND}` lists the tickets,"
-    f" `{STATUS_COMMAND} {TICKET_PREFIX}-n` shows one."
+    f"I bring bug reports here and close them when @{REPRODUCER_ROLE} posts {_CLOSE_LINE}."
+    f" `{STATUS_COMMAND}` lists the tickets, `{STATUS_COMMAND} {TICKET_PREFIX}-n` shows one."
 )
+NOT_VERIFIER = f"Only @{REPRODUCER_ROLE} or the room owner can close a ticket, with {_CLOSE_LINE}."
+CLOSE_FORMAT = f"To close a ticket, post {_CLOSE_LINE} with the full PR link."
+STAYS_OPEN = "{ticket_id} stays open. PM, the reason is in this thread; you decide what is next."
 NO_TICKETS = "No tickets yet."
 UNKNOWN_TICKET = "There is no ticket {ticket_id}."
 NO_REPRODUCER = "Nobody holds the {role} role right now. PM, please start one for {ticket_id}."

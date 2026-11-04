@@ -3,11 +3,12 @@ and a fake runner stands in for Claude Code."""
 
 import asyncio
 import json
+from dataclasses import replace
 
 import httpx
 from common.switch_client import Credentials, IncomingMessage, RoomConnection, SwitchApi
 
-from agent import WORKING, Coder
+from agent import NO_FRONTDESK, NO_REPRODUCER, WORKING, Coder
 from claude_runner import ClaudeResult
 
 CREDS = Credentials("agent-r", "key-r")
@@ -133,6 +134,87 @@ def test_a_message_during_a_job_is_queued_and_runs_after(settings) -> None:
         (WORKING, "m3"),
         ("answer 2", "m3"),
     ]
+
+
+PR = "https://github.com/Ishaan2053/bugline/pull/21"
+VERIFY = f"@reproducer please verify BL-1 on PR {PR} (branch fix/demo-app-bl-1-share-11071432)"
+
+
+def answer(settings, reply: str, statuses: dict | None = None) -> FakeSwitch:
+    """Have the coder answer `reply` to one message; the bridge reports `statuses` for targets."""
+    fake = FakeSwitch()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = fake.handler(request)
+        if request.url.path.endswith("/send_targeted_message"):
+            result = {"event_id": "t", "target_statuses": statuses or {}}
+            return httpx.Response(200, json={"result": result})
+        return response
+
+    async def main() -> None:
+        api = SwitchApi("http://switch.test", CREDS, transport=httpx.MockTransport(handler))
+        connection = RoomConnection("eng", "room-e", CREDS, "http://switch.test", "c-eng")
+        coder = Coder(settings, api, connection, None)
+        await coder.answer(reply, message(2, "@x go"))
+        await api.aclose()
+
+    asyncio.run(main())
+    return fake
+
+
+def as_role(settings, role: str, frontdesk: str = "bugline-frontdesk"):
+    return replace(settings, role=role, frontdesk_name=frontdesk)
+
+
+def test_fixer_hands_the_pr_to_the_reproducer_role(settings) -> None:
+    reply = f"{VERIFY}\nTest: test_share_for_member_with_no_expenses"
+    fake = answer(as_role(settings, "fixer"), reply, {"bugline-repro": "live"})
+    body = reply.removeprefix("@reproducer ")
+    assert fake.calls == [
+        (
+            "send_targeted_message",
+            "c-eng",
+            {"body": body, "target_roles": ["reproducer"], "thread_id": "t1"},
+        )
+    ]
+
+
+def test_nobody_holding_reproducer_gets_a_note_in_the_thread(settings) -> None:
+    fake = answer(as_role(settings, "fixer"), VERIFY, {})
+    assert fake.posts() == [(NO_REPRODUCER, "t1")]
+
+
+def test_reproducer_sends_its_verdict_to_the_front_desk_by_name(settings) -> None:
+    settings = as_role(settings, "reproducer")
+    for verdict in (f"Verified BL-1: {PR}", "Not verified BL-1: test_share still fails"):
+        fake = answer(settings, f"@frontdesk {verdict}", {"bugline-frontdesk": "live"})
+        assert fake.calls == [
+            (
+                "send_targeted_message",
+                "c-eng",
+                {"body": verdict, "target_names": ["bugline-frontdesk"], "thread_id": "t1"},
+            )
+        ]
+    offline = answer(settings, f"@frontdesk Verified BL-1: {PR}", {"bugline-frontdesk": "offline"})
+    assert offline.posts() == [(NO_FRONTDESK.format(name="bugline-frontdesk"), "t1")]
+
+
+def test_without_the_front_desk_name_a_verdict_is_posted_plainly(settings) -> None:
+    reply = f"@frontdesk Verified BL-1: {PR}"
+    fake = answer(as_role(settings, "reproducer", frontdesk=""), reply)
+    assert [op for op, _, _ in fake.calls] == ["post_message"]
+    assert fake.posts() == [(reply, "t1")]
+
+
+def test_other_replies_and_the_wrong_role_post_plainly(settings) -> None:
+    repro = as_role(settings, "reproducer")
+    verdict = "Ran: python -m scratch.bl_1\nVerdict: reproduced"
+    assert [op for op, _, _ in answer(repro, verdict).calls] == ["post_message"]
+    # Only the reproducer's verdict and the fixer's verify request hand work on.
+    fixer_verdict = answer(as_role(settings, "fixer"), f"@frontdesk Verified BL-1: {PR}")
+    assert [op for op, _, _ in fixer_verdict.calls] == ["post_message"]
+    repro_verify = answer(repro, VERIFY)
+    assert [op for op, _, _ in repro_verify.calls] == ["post_message"]
 
 
 def test_failed_run_and_crashing_runner_post_one_line_and_the_loop_goes_on(settings) -> None:

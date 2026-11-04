@@ -10,8 +10,9 @@ import pytest
 
 import reset_demo
 
-KEPT = "fix/demo-app-bl-1-share-link"
-DROPPED = "fix/demo-app-bl-7-broken-thing"
+KEPT = "fix/demo-app-bl-1-share-link"  # a branch from before the time stamp
+DROPPED = "fix/demo-app-bl-7-broken-thing-11071432"  # fix-policy.md: <slug>-<stamp>
+VERIFY = "verify-bl-7"  # the reproducer's local copy of a PR (repro-checklist.md)
 OTHER = "feat/scripts-other"
 PRS = [
     {"number": 18, "title": "BL-1: share link works", "headRefName": KEPT, "state": "OPEN"},
@@ -46,6 +47,7 @@ def clone(tmp_path: Path) -> Path:
     for branch in (KEPT, DROPPED, OTHER):
         git(work, "branch", branch)
     git(work, "push", "origin", "--all")
+    git(work, "branch", VERIFY)  # local only
     app = work / reset_demo.APP_DIR
     (app / "scratch").mkdir(parents=True)
     (app / "scratch" / "repro_bl_7.py").write_text("print(1)\n")
@@ -73,6 +75,7 @@ def test_dry_run_plans_the_ticket_cleanup(clone: Path, capsys: pytest.CaptureFix
     assert "would run: git reset --hard origin/main" in out
     assert f"would run: git branch -D {KEPT}" in out  # local ticket branches all go
     assert f"would run: git branch -D {DROPPED}" in out
+    assert f"would run: git branch -D {VERIFY}" in out
     assert f"git branch -D {OTHER}" not in out
     assert "scratch" in out and "bugline.db" in out and "cache.db" not in out
     assert "would run: gh pr close 30  (BL-7: broken thing)" in out

@@ -38,10 +38,16 @@ front desk replies with the short line from CLAUDE.md and does not call the mode
 ## In `bugline-eng`
 
 - Post tickets. The last line of a ticket addresses `@reproducer`.
-- Watch for the fixer's done message: it addresses `@frontdesk` and contains `BL-<n>` and a
-  `https://github.com/.../pull/<number>` link (format in `switch/docs/fix-policy.md`, "What to
-  post when done"). Close that ticket and post in `bugline-support` that `BL-<n>` is fixed, with
-  the PR link, for the reporter and every subscriber.
+- Close a ticket only on `Verified BL-<n>: <PR link>` at the start of a message (format in
+  `switch/docs/repro-checklist.md`, "Verify a fix"), and only from the reproducer agent or the
+  room owner. Then post in `bugline-support` that `BL-<n>` is fixed, with the PR link, for the
+  reporter and every subscriber, and remember who closed it for `status`.
+  - The owner is known by the `sender_role` Switch sends with each message (`owner`). The
+    reproducer is known by its name, looked up once at start from the agent id `scripts/bootstrap.py`
+    writes to `.env` (`SWITCH_REPRODUCER_AGENT_ID`); without that id only the owner can close.
+  - `Not verified BL-<n>: <why>` from either of them: the ticket stays open, and the front desk
+    says so in the thread.
+  - Anyone else who names a ticket is told that only `@reproducer` or the room owner can close it.
 - Any other message that addresses it gets one line saying what it does here, and nothing more.
   The front desk never instructs the fixer.
 

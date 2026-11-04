@@ -243,9 +243,12 @@ then `Verdict: reproduced` with the `ZeroDivisionError` in `demo-app/app/main.py
 @fixer go on BL-1, keep it to the share handler, add a regression test
 ```
 
-Expect, in about a minute: `@frontdesk BL-1 is fixed: https://github.com/<you>/bugline/pull/<n>`,
-then "Closed BL-1, telling the reporter." and, in `bugline-support`, "<you>, BL-1 is fixed: <PR
-link>". Do not merge the PR; it removes the seeded fault.
+Expect, in about a minute: `@reproducer please verify BL-1 on PR
+https://github.com/<you>/bugline/pull/<n> (branch fix/demo-app-bl-1-...-<stamp>)`. The reproducer
+then checks out the PR and posts `@bugline-frontdesk Verified BL-1: <PR link>`, the front desk
+answers "Closed BL-1, telling the reporter.", and in `bugline-support` "<you>, BL-1 is fixed: <PR
+link>". `@frontdesk status` shows `closed by bugline-repro`. Do not merge the PR; it removes the
+seeded fault.
 
 **Path 3: not a bug.** User:
 
@@ -280,6 +283,13 @@ and names `split_equal()` in `demo-app/app/money.py`.
 
 Expect: "Already tracked as BL-2, I'll tell you when it's fixed." Nothing new in `#bugline-eng`.
 
+**Only the verifier closes.** While `BL-2` is open, a second account in `#bugline-eng`, in the
+`BL-2` thread: `@frontdesk Verified BL-2: https://github.com/<you>/bugline/pull/19` → "Only
+@reproducer or the room owner can close a ticket, ...", and `@frontdesk status` still shows `BL-2`
+open. The PM may post the same line by hand, which closes the ticket and makes `status` show
+`closed by <PM>`; try that on a ticket the rest of the run does not need. A PR that does not fix
+the bug gets `Not verified BL-n: <why>` from the reproducer, and the ticket stays open.
+
 **Burst.** Second user sends three questions within a minute (`what does net mean in balances?`,
 `how does settle up decide who pays whom?`, `can anyone open a share link?`). The first two are
 answered; the third gets "Give me a minute, then send that again." with no model call.
@@ -304,7 +314,8 @@ Expect: `Verdict: not reproduced`, what it tried, and a request for what the use
 
 **Close with subscribers.** PM, in the `BL-2` thread:
 `@fixer go on BL-2, keep it to the equal split in demo-app/app/money.py so the shares add up to the amount, and add a regression test`.
-Expect a PR, then "BL-2 is fixed" in `bugline-support` for both the reporter and the second user.
+Expect a PR, the reproducer's `Verified BL-2`, then "BL-2 is fixed" in `bugline-support` for both
+the reporter and the second user.
 
 ## Troubleshooting
 

@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from common.conventions import FIXER_ROLE, REPRODUCER_ROLE
 from common.env import load_env_file, require_env
 
 AGENT_DIR = Path(__file__).resolve().parent
@@ -41,6 +42,10 @@ SWITCH_API_URL_ENV = "SWITCH_API_URL"  # the bridge ("API URL"), not the Gateway
 REGISTRATION_KEY_ENV = "SWITCH_REGISTRATION_KEY"
 ENG_ROOM_ID_ENV = "SWITCH_ENG_ROOM_ID"
 ENG_ROOM = "eng"  # the room key the connection id is saved under
+# The front desk's agent name, written by bootstrap. The reproducer sends its verdict to that name;
+# without it the verdict is posted plainly and reaches the front desk through its `@frontdesk`
+# alias, with no word on whether it is connected.
+FRONTDESK_AGENT_NAME_ENV = "FRONTDESK_AGENT_NAME"
 
 DEFAULT_TIMEOUT_S = 1800.0  # one Claude Code run; a fix with a full test run takes minutes
 REPLY_MAX_CHARS = 2000  # hard cap on a posted answer, on top of REPLY_MAX_LINES
@@ -108,14 +113,14 @@ class Role:
 
 
 ROLES = {
-    "reproducer": Role(
+    REPRODUCER_ROLE: Role(
         "bugline-repro",
         "Bugline reproducer: runs Claude Code to reproduce a ticket and posts the verdict.",
         "reproducer.md",
         REPRODUCER_ALLOWED,
         (*REPRODUCER_DENIED, *DENIED),
     ),
-    "fixer": Role(
+    FIXER_ROLE: Role(
         "bugline-fixer",
         "Bugline fixer: runs Claude Code to fix an approved ticket and opens the pull request.",
         "fixer.md",
@@ -138,6 +143,7 @@ class Settings:
     denied_tools: tuple[str, ...]
     claude_bin: str = "claude"
     timeout_s: float = DEFAULT_TIMEOUT_S
+    frontdesk_name: str = ""  # FRONTDESK_AGENT_NAME; "" when bootstrap has not written it
 
     @property
     def clone(self) -> Path:
@@ -177,6 +183,7 @@ def settings(role_name: str | None = None) -> Settings:
         denied_tools=role.denied,
         claude_bin=os.environ.get("CODER_CLAUDE_BIN") or "claude",
         timeout_s=float(os.environ.get("CODER_TIMEOUT_S") or DEFAULT_TIMEOUT_S),
+        frontdesk_name=os.environ.get(FRONTDESK_AGENT_NAME_ENV, ""),
     )
 
 

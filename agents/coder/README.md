@@ -27,6 +27,11 @@ Code for each message.
    message, the sender's name and the thread so far.
 4. Claude Code's final message is posted in the thread, cut to 10 lines. A failure or timeout
    posts one line, and the agent goes on to the next job.
+5. Two answers hand work on, and go out with `send_targeted_message` so Switch says whether
+   anyone will see them. The fixer's `please verify BL-n on PR <url>` goes to the `reproducer`
+   role; the reproducer's `Verified BL-n: <url>` or `Not verified BL-n: <why>` goes to the front
+   desk by name (`FRONTDESK_AGENT_NAME`). If no live agent gets it, one line in the thread says
+   so. The patterns are in `../common/conventions.py`.
 
 Who may address each agent is set by its access rule in Switch, before the message reaches the
 program. The brief is the second line of defence. The code adds no third one.
@@ -45,6 +50,7 @@ program. The brief is the second line of defence. The code adds no third one.
 | `SWITCH_API_URL` | required | The bridge URL, the same as the front desk's |
 | `SWITCH_REGISTRATION_KEY` | needed for `--register` | Registration key; bootstrap registers without it |
 | `SWITCH_ENG_ROOM_ID` | required | Room id of `bugline-eng` |
+| `FRONTDESK_AGENT_NAME` | none; bootstrap writes it | Where the reproducer sends its verdict. Unset: the verdict is posted plainly and reaches the front desk through `@frontdesk` |
 | `CODER_ROLE` | required | `reproducer` or `fixer`; set it per shell |
 | `CODER_AGENT_NAME` | `bugline-repro` / `bugline-fixer` | Switch agent name |
 | `CODER_BRIEF` | `switch/agent-briefs/<role>.md` | Brief, read at every run |
@@ -62,7 +68,7 @@ program. The brief is the second line of defence. The code adds no third one.
 3. From the repo root, run `scripts/bootstrap.py`
    ([docs/switch-setup.md part B](../../docs/switch-setup.md#part-b-scriptsbootstrappy)). It
    registers both agents (credentials go to `state/<agent name>/credentials.json`), writes
-   `SWITCH_API_URL` and `SWITCH_ENG_ROOM_ID` into `.env`, puts both agents in `bugline-eng` with
+   `SWITCH_API_URL`, `SWITCH_ENG_ROOM_ID` and `FRONTDESK_AGENT_NAME` into `.env`, puts both agents in `bugline-eng` with
    its roles, and sets the access rules: the reproducer its owner and the owner's agents, the
    fixer its owner only, in `bugline-eng` only.
 

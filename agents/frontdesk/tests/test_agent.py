@@ -1,13 +1,15 @@
-"""Tests for how agent.py carries out posts: op choice, threading and the two fallbacks."""
+"""Tests for how agent.py carries out posts (op choice, threading and the two fallbacks) and how
+it finds the verifier's name at start."""
 
 import asyncio
 import json
 
 import httpx
+import pytest
 from common.switch_client import Credentials, RoomConnection, SwitchApi
 
 import config
-from agent import Poster
+from agent import Poster, verifier_names
 from handlers import Post
 
 CREDS = Credentials("agent-1", "key-1")
@@ -87,3 +89,36 @@ def test_dead_connection_falls_back_to_the_unthreaded_message_route() -> None:
 
     seen, _ = run_posts([Post(config.ROOM_SUPPORT, "hi", thread_id="m1")], respond)
     assert seen[1] == ("/agents/agent-1/message", "", {"room_id": "room-support", "content": "hi"})
+
+
+def lookup(monkeypatch: pytest.MonkeyPatch, agent_id: str, respond) -> frozenset[str]:
+    """Run verifier_names with SWITCH_REPRODUCER_AGENT_ID set to `agent_id` ("" for unset)."""
+    monkeypatch.setenv(config.VERIFIER_AGENT_ID_ENV, agent_id)
+    transport = httpx.MockTransport(lambda request: respond(request.url.path))
+
+    async def main() -> frozenset[str]:
+        api = SwitchApi("http://switch.test", CREDS, transport=transport)
+        try:
+            return await verifier_names(api)
+        finally:
+            await api.aclose()
+
+    return asyncio.run(main())
+
+
+def test_the_verifier_is_named_by_the_agent_id_bootstrap_wrote(monkeypatch) -> None:
+    def respond(path: str) -> httpx.Response:
+        assert path == "/agents/agent-1/ops/get_agent_detail"
+        return ok({"id": "a-repro", "name": "bugline-repro"})
+
+    assert lookup(monkeypatch, "a-repro", respond) == {"bugline-repro"}
+
+
+def test_no_verifier_id_or_a_failed_lookup_leaves_only_the_owner(monkeypatch, caplog) -> None:
+    def respond(path: str) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "no such agent"})
+
+    assert lookup(monkeypatch, "", respond) == frozenset()
+    assert "SWITCH_REPRODUCER_AGENT_ID is not set" in caplog.text
+    assert lookup(monkeypatch, "a-gone", respond) == frozenset()
+    assert "only the room owner can close" in caplog.text

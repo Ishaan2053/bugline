@@ -4,9 +4,11 @@ Switch Console cannot run managed coding agents on Windows, so `bugline-repro` a
 are custom agents like the front desk. Each holds one connection to the eng room and takes its
 role there on every connect. For each message addressed to it, it posts "working on it" in the
 thread, runs Claude Code headless in its own working directory with its brief as the system
-prompt, and posts Claude Code's answer in the same thread. Jobs run one at a time; a message
-that arrives during a job is told it is queued. A failed or slow run posts one line and the
-agent carries on.
+prompt, and posts Claude Code's answer in the same thread. Two answers hand work on, and go out
+as targeted messages so Switch says whether anyone will see them: the fixer's "please verify"
+goes to the reproducer role, and the reproducer's verdict to the front desk. Jobs run one at a
+time; a message that arrives during a job is told it is queued. A failed or slow run posts one
+line and the agent carries on.
 
 Who may address the agent is Switch's job (the access rule in Console); the brief is the second
 line. The code adds no gate of its own beyond passing the sender's name to Claude Code.
@@ -24,7 +26,15 @@ from pathlib import Path
 # agents/, so the shared package `common` imports when this runs as `python agent.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from common.conventions import TICKET_ID_RE, format_ticket_id
+from common.conventions import (
+    FIXER_ROLE,
+    REPRODUCER_ROLE,
+    TICKET_ID_RE,
+    VERDICT_RE,
+    VERIFY_REQUEST_RE,
+    format_ticket_id,
+    without_mentions,
+)
 from common.loop import run
 from common.switch_client import (
     IncomingMessage,
@@ -33,6 +43,7 @@ from common.switch_client import (
     SwitchApi,
     connection_id_for,
     load_credentials,
+    reached,
     register,
 )
 
@@ -42,8 +53,14 @@ from claude_runner import ClaudeResult, build_prompt, claude_command, run_claude
 log = logging.getLogger("coder")
 
 # Ops the agent cannot work without; checked against GET /agents/{id}/ops at startup.
-REQUIRED_OPS = ("assume_role", "post_message", "read_context")
+REQUIRED_OPS = ("assume_role", "post_message", "read_context", "send_targeted_message")
 WORKING = "Working on it. This runs Claude Code and can take a few minutes."
+# Posted under a hand-off that no live agent will see.
+NO_REPRODUCER = (
+    f"Nobody holds the {REPRODUCER_ROLE} role right now, so nobody is verifying this."
+    f" PM, start agents/coder with CODER_ROLE={REPRODUCER_ROLE}."
+)
+NO_FRONTDESK = "{name} is not connected, so the ticket stays open until it is back."
 
 Runner = Callable[[str], Awaitable[ClaudeResult]]
 
@@ -117,9 +134,44 @@ class Coder:
         result = await self.runner(build_prompt(self.settings, msg, thread))
         log.info("claude answered (ok=%s):\n%s", result.ok, result.text)
         if result.ok:
-            await self._post(trim_reply(result.text), msg)
+            await self.answer(trim_reply(result.text), msg)
         else:
             await self._post(f"Could not finish: {result.text[:300]}", msg)
+
+    def handoff(self, reply: str) -> tuple[dict[str, tuple[str, ...]], str] | None:
+        """Whom a reply hands work to, and the note to post if they cannot see it; None if no one.
+
+        The fixer's verify request goes to whoever holds the reproducer role; the reproducer's
+        verdict goes to the front desk by name (switch/docs/fix-policy.md, repro-checklist.md).
+        """
+        text = without_mentions(reply)
+        if self.settings.role == FIXER_ROLE and VERIFY_REQUEST_RE.search(text):
+            return {"roles": (REPRODUCER_ROLE,)}, NO_REPRODUCER
+        frontdesk = self.settings.frontdesk_name
+        if self.settings.role == REPRODUCER_ROLE and frontdesk and VERDICT_RE.match(text):
+            return {"names": (frontdesk,)}, NO_FRONTDESK.format(name=frontdesk)
+        return None
+
+    async def answer(self, reply: str, msg: IncomingMessage) -> None:
+        """Post Claude Code's reply in the thread: as a targeted message when it hands work on,
+        so Switch says whether anyone will see it; plainly otherwise or if that fails."""
+        handoff = self.handoff(reply)
+        if handoff is None:
+            await self._post(reply, msg)
+            return
+        targets, if_unreachable = handoff
+        try:
+            # Switch puts the @mention back in front; leaving ours in would name the target twice.
+            result = await self.api.send_targeted(
+                self.connection.connection_id, without_mentions(reply), msg.thread_root, **targets
+            )
+        except (OpError, OSError) as exc:
+            log.warning("targeted message failed (%s); posting it plainly", exc)
+            await self._post(reply, msg)
+            return
+        log.info("handed on to %s: %s", targets, result.get("target_statuses") or "no live target")
+        if not reached(result):
+            await self._post(if_unreachable, msg)
 
     async def thread_before(self, msg: IncomingMessage) -> list[dict]:
         """The messages in `msg`'s thread before it, oldest first. Empty if it cannot be read."""
@@ -172,6 +224,11 @@ async def serve(settings: config.Settings) -> None:
     connection = RoomConnection(
         config.ENG_ROOM, config.eng_room_id(), creds, base_url, connection_id
     )
+    if settings.role == REPRODUCER_ROLE and not settings.frontdesk_name:
+        log.warning(
+            "%s is not set, so verdicts are posted plainly; run scripts/bootstrap.py",
+            config.FRONTDESK_AGENT_NAME_ENV,
+        )
     cmd = claude_command(settings, claude_path)
     log.info("%s in %s runs: %s", settings.agent_name, settings.clone, " ".join(cmd))
     runner = partial(run_claude, cmd, cwd=str(settings.clone), timeout_s=settings.timeout_s)

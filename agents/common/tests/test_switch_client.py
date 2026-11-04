@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
+from common.conventions import VERDICT_RE, VERIFIED, VERIFY_REQUEST_RE, without_mentions
 from common.switch_client import (
     ConnectionStopped,
     Credentials,
@@ -16,6 +17,7 @@ from common.switch_client import (
     RoomConnection,
     SwitchApi,
     connection_id_for,
+    reached,
     register,
 )
 from websockets.asyncio.server import serve
@@ -36,6 +38,7 @@ def message(seq: int, body: str, addressed: bool) -> str:
         "sender": "@switch-user-ab12:localhost",
         "sender_name": "Asha",
         "sender_kind": "user",
+        "sender_role": "owner",
         "message_id": f"m{seq}",
         "body": body,
         "thread_id": None,
@@ -86,8 +89,16 @@ def test_pong_carries_cursor_and_only_addressed_messages_are_queued() -> None:
 
     assert pongs == [{"type": "pong", "cursor": 10}, {"type": "pong", "cursor": 12}]
     assert [m.body for m in queued] == ["@frontdesk the share link errors"]
+    # sender_role is what lets the front desk accept a close from the owner.
     assert queued[0] == IncomingMessage(
-        "support", "room-s", "@switch-user-ab12:localhost", "Asha", queued[0].body, "m12", None
+        "support",
+        "room-s",
+        "@switch-user-ab12:localhost",
+        "Asha",
+        queued[0].body,
+        "m12",
+        None,
+        "owner",
     )
     assert conn.rooms == ["room-s"] and conn.generation == 3
     assert conn.connected.is_set()  # what an agent waits on to take its role
@@ -156,6 +167,46 @@ def test_op_call_sends_bare_args_and_connection_header() -> None:
     assert request.headers["X-Switch-Connection-Id"] == "c-1"
     assert request.headers["Authorization"] == "Bearer key-1"
     assert json.loads(request.content) == {"body": "hi"}  # None arguments are left out
+
+
+def test_targeted_message_and_who_it_reached() -> None:
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        result = {"event_id": "e1", "target_statuses": {"bugline-repro": "no_session"}}
+        return httpx.Response(200, json={"result": result})
+
+    async def main():
+        api = mock_api(handler)
+        try:
+            return await api.send_targeted("c-1", "please verify BL-1", "t1", roles=("reproducer",))
+        finally:
+            await api.aclose()
+
+    result = asyncio.run(main())
+    assert seen == [
+        {"body": "please verify BL-1", "target_roles": ["reproducer"], "thread_id": "t1"}
+    ]
+    assert not reached(result)
+    assert reached({"target_statuses": {"a": "no_session", "b": "awaiting_manual_poll"}})
+    assert not reached({"event_id": "e2"})  # a role nobody holds lists no one
+
+
+def test_verify_request_and_verdict_lines() -> None:
+    pr = "https://github.com/Ishaan2053/bugline/pull/21"
+    request = VERIFY_REQUEST_RE.search(f"Please verify BL-3 on PR {pr} (branch fix/x)")
+    assert request and request["number"] == "3" and request["pr_url"] == pr
+    text = without_mentions(f"@bugline-frontdesk @frontdesk, Verified BL-3: {pr}\npytest: ok")
+    verdict = VERDICT_RE.match(text)
+    assert verdict and (verdict["verdict"], verdict["number"], verdict["rest"]) == (
+        "Verified",
+        "3",
+        pr,
+    )
+    no = VERDICT_RE.match("Not verified BL-3: the share test still fails")
+    assert no and no["verdict"].lower() == f"not {VERIFIED}"
+    assert VERDICT_RE.match("I think Verified BL-3: x") is None  # the verdict starts the message
 
 
 def test_op_error_and_op_discovery() -> None:

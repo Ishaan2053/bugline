@@ -28,6 +28,7 @@ from bootstrap import (
     Layout,
     Stop,
     expected_policies,
+    handoff_env,
     load_agent_configs,
     load_layout,
     read_options,
@@ -104,6 +105,7 @@ def switch_checks(gw: Gateway, layout: Layout, email: str, password: str) -> Ite
     for spec in layout.agents:
         check, creds[spec.name] = key_check(gw, spec, agent_ids.get(spec.name))
         yield check
+    yield handoff_check(layout, agent_ids)
     yield from role_checks(gw, layout, creds[layout.agents[0].name], ids["eng"])
     wanted = expected_policies(ids["eng"])
     for spec in layout.agents:
@@ -187,6 +189,21 @@ def key_check(
     )
     hint = f"the server answered {response.status_code} to the saved key"
     return Check(name, response.is_success, hint), creds if response.is_success else None
+
+
+def handoff_check(layout: Layout, agent_ids: dict[str, str]) -> Check:
+    """The verify hand-off settings in both .env files match the agents on the server.
+
+    Without them the agents still run, but only the room owner can close a ticket.
+    """
+    stale = []
+    for path, values in zip(
+        (layout.frontdesk_env, layout.coder_env), handoff_env(layout, agent_ids), strict=True
+    ):
+        env = read_env_file(path)
+        stale += [var for var, value in values.items() if env.get(var) != value]
+    hint = f"{', '.join(stale)} missing or stale, so only the owner can close tickets; {RERUN}"
+    return Check("verify hand-off settings in both .env files", not stale, hint)
 
 
 def role_checks(

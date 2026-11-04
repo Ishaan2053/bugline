@@ -69,9 +69,9 @@ when named.
 
 | Role | Type | Agent name | Runtime | Who may instruct | Job |
 | --- | --- | --- | --- | --- | --- |
-| `frontdesk` | shared | `bugline-frontdesk` | Custom Python agent over the Switch protocol, Gemini | `anyone` | Classify each report as bug / question / request; ask for missing fields; answer questions from the repo reference; hand complete bugs to `#eng` as a structured report with a ticket id (`BL-n`); post the resolution back to the reporter |
-| `reproducer` | shared | `bugline-repro` | Custom protocol agent in `agents/coder` running Claude Code headless (Console cannot run coding agents on Windows) | frontdesk + PM | Clone the referenced repo, write the smallest failing script, run it, post exact output + verdict (reproduced / not) + likely cause. **Never guess.** |
-| `fixer` | **exclusive** | `bugline-fixer` | The same `agents/coder` program with `CODER_ROLE=fixer` | **PM only, in `bugline-eng` only** | Fix one handler, add a regression test, run tests, open a PR, post the link, mention `@frontdesk` with the ticket id. Never touch migrations or data. |
+| `frontdesk` | shared | `bugline-frontdesk` | Custom Python agent over the Switch protocol, Gemini | `anyone` | Classify each report as bug / question / request; ask for missing fields; answer questions from the repo reference; hand complete bugs to `#eng` as a structured report with a ticket id (`BL-n`); close a ticket only on a verified fix and post the resolution back to the reporter |
+| `reproducer` | shared | `bugline-repro` | Custom protocol agent in `agents/coder` running Claude Code headless (Console cannot run coding agents on Windows) | frontdesk + PM + fixer (owner and owner's agents) | Clone the referenced repo, write the smallest failing script, run it, post exact output + verdict (reproduced / not) + likely cause. **Never guess.** When the fixer asks, check out the PR, rerun the script and the tests, and send `Verified BL-n: <PR url>` or `Not verified BL-n: <why>` to the front desk. The only agent whose `Verified` closes a ticket. |
+| `fixer` | **exclusive** | `bugline-fixer` | The same `agents/coder` program with `CODER_ROLE=fixer` | **PM only, in `bugline-eng` only** | Fix one handler, add a regression test, run tests, open a PR on a branch with a time stamp, then hand it to `@reproducer` with `please verify BL-n on PR <url> (branch <name>)`. Never closes a ticket. Never touch migrations or data. |
 
 ### Shared material (room documents, in `switch/docs/`)
 
@@ -111,8 +111,12 @@ Seeded faults (planted on purpose; do not fix them unless the task explicitly sa
   titles and summaries of all open tickets, asking whether this is the same problem. Match →
   reply "already tracked as `BL-n`, I'll tell you when it's fixed", add the reporter to that
   ticket's subscribers, post nothing to `#eng`. No match → new ticket, escalate.
-- On close (fixer mentions `@frontdesk BL-n` with the PR link) → notify the original reporter and
-  every subscriber in the support room.
+- On close → notify the original reporter and every subscriber in the support room. A close is
+  `Verified BL-n: <PR url>` at the start of a message in `#eng`, and only from the reproducer
+  (known by its name, looked up at start from `SWITCH_REPRODUCER_AGENT_ID`, which bootstrap
+  writes) or the room owner by hand (`sender_role` is `owner`). `Not verified BL-n: <why>` → the
+  ticket stays open. Anyone else naming a ticket → "only @reproducer or the room owner can close".
+  Without the agent id, only the owner can close. `status` shows who closed each ticket.
 - **Rate guards:** a user may have at most **5 open tickets**; beyond that the front desk replies
   "let's resolve the open ones first" and does not escalate. A per-user cooldown of 3 model-backed
   replies per minute; messages over the limit get a short "give me a minute" and are not sent to

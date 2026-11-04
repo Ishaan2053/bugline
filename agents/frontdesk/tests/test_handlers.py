@@ -1,6 +1,7 @@
 """Tests for handlers.py: a fake model and an in-memory store, one test per branch."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 import pytest
 from common.switch_client import IncomingMessage
@@ -170,42 +171,102 @@ def test_rate_limited_model_gets_a_holding_reply(store: Store) -> None:
     assert handle(msg("@frontdesk hi"), store, models) == [reply(messages.RATE_LIMITED)]
 
 
-def test_close_in_eng_notifies_reporter_and_every_subscriber(store: Store) -> None:
+REPRO = "bugline-repro"  # the verifier's agent name, as agent.py looks it up
+VERIFIERS = frozenset({REPRO})
+
+
+def eng(body: str, n: int = 9, user: str = "pm", role: str | None = None, thread=None):
+    """A message in the eng room. `role` is the sender_role Switch reports for a person."""
+    return replace(msg(body, room=config.ROOM_ENG, user=user, n=n, thread=thread), sender_role=role)
+
+
+def verified(ticket: int = 1, by: str = REPRO, **kwargs) -> IncomingMessage:
+    return eng(f"@bugline-frontdesk Verified BL-{ticket}: {PR}", user=by, **kwargs)
+
+
+def close(message: IncomingMessage, store: Store) -> list[Post]:
+    return handle(message, store, FakeModels(), verifiers=VERIFIERS)
+
+
+def test_verified_by_the_reproducer_closes_and_notifies_every_subscriber(store: Store) -> None:
     handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
     handle(msg("@frontdesk me too", user="u2", n=2), store, FakeModels(bug(), duplicate="BL-1"))
-    close = msg(f"@frontdesk BL-1 fixed in {PR}", room=config.ROOM_ENG, user="fixer", n=9)
 
-    posts = handle(close, store, FakeModels())
+    posts = close(verified(), store)
 
     assert posts == [
         Post(config.ROOM_ENG, "Closed BL-1, telling the reporter.", thread_id="m9"),
         Post(config.ROOM_SUPPORT, f"Asha, BL-1 is fixed: {PR}", thread_id="m1"),
         Post(config.ROOM_SUPPORT, f"Ravi, BL-1 is fixed: {PR}", thread_id="m2"),
     ]
-    again = handle(close, store, FakeModels())
+    assert store.get_ticket("BL-1").closed_by == REPRO  # type: ignore[union-attr]
+    (board,) = handle(eng("@frontdesk status"), store, FakeModels())
+    assert board.body.endswith(f"PR #7, closed by {REPRO}")
+    again = close(verified(), store)
     assert again == [Post(config.ROOM_ENG, messages.NOT_OPEN.format(ticket_id="BL-1"), "m9")]
 
 
-def test_replies_inside_a_thread_stay_in_that_thread(store: Store) -> None:
-    # The live BL-2 run: the fixer's close is a reply in the ticket's thread (root t1), so
-    # "Closed" must go to t1, not start a sub-thread under the fixer's own message.
+def test_the_room_owner_may_close_by_hand(store: Store) -> None:
     handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
-    close = msg(f"@frontdesk BL-1 fixed in {PR}", room=config.ROOM_ENG, n=9, thread="t1")
-    assert handle(close, store, FakeModels())[0].thread_id == "t1"
+    posts = close(verified(by="ishaan2053", role=config.OWNER_SENDER_ROLE), store)
+    assert posts[0].body == "Closed BL-1, telling the reporter."
+    assert store.get_ticket("BL-1").closed_by == "ishaan2053"  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "sender",
+    [
+        verified(by="fixer"),  # another agent: the fixer's old close line no longer closes
+        verified(by="sam", role="member"),  # a person who is not the owner
+        verified(by=REPRO, role="admin"),  # a person who took the reproducer's name
+        eng("@frontdesk BL-1 reproduced", user="u1"),
+    ],
+)
+def test_anyone_else_naming_a_ticket_is_refused(store: Store, sender: IncomingMessage) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    assert close(sender, store) == [Post(config.ROOM_ENG, messages.NOT_VERIFIER, "m9")]
+    assert store.get_ticket("BL-1").status == "open"  # type: ignore[union-attr]
+
+
+def test_without_a_verifier_id_only_the_owner_closes(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    refused = handle(verified(), store, FakeModels())  # agent.py found no verifier: empty set
+    assert refused == [Post(config.ROOM_ENG, messages.NOT_VERIFIER, "m9")]
+    owner = handle(verified(role=config.OWNER_SENDER_ROLE), store, FakeModels())
+    assert owner[0].body == "Closed BL-1, telling the reporter."
+
+
+def test_not_verified_leaves_the_ticket_open(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    posts = close(eng("@frontdesk Not verified BL-1: test_share fails", user=REPRO), store)
+    assert posts == [Post(config.ROOM_ENG, messages.STAYS_OPEN.format(ticket_id="BL-1"), "m9")]
+    (board,) = handle(eng("@frontdesk status"), store, FakeModels())
+    assert " · open · " in board.body
+
+
+@pytest.mark.parametrize(
+    "body", [f"@frontdesk BL-1 is fixed: {PR}", "@frontdesk Verified BL-1: see the PR"]
+)
+def test_a_close_needs_the_verified_line_with_a_pr_link(store: Store, body: str) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    posts = close(eng(body, user=REPRO), store)
+    assert posts == [Post(config.ROOM_ENG, messages.CLOSE_FORMAT, "m9")]
+
+
+def test_replies_inside_a_thread_stay_in_that_thread(store: Store) -> None:
+    # The live BL-2 run: the close is a reply in the ticket's thread (root t1), so "Closed" must
+    # go to t1, not start a sub-thread under the closing message.
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    assert close(verified(thread="t1"), store)[0].thread_id == "t1"
     # A report completed by a reply in a support thread is answered, and later notified, there.
     completed = msg("@frontdesk group 1", user="u2", n=3, thread="t2")
     assert handle(completed, store, FakeModels(bug()))[-1].thread_id == "t2"
-    close_2 = msg(f"@frontdesk BL-2 fixed in {PR}", room=config.ROOM_ENG, n=10, thread="t3")
-    assert handle(close_2, store, FakeModels())[-1].thread_id == "t2"
+    assert close(verified(2, n=10, thread="t3"), store)[-1].thread_id == "t2"
 
 
 def test_other_eng_messages_get_one_line_about_what_the_front_desk_does(store: Store) -> None:
-    posts = handle(msg("@frontdesk BL-1 reproduced", room=config.ROOM_ENG), store, FakeModels())
-    assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m1")]
-
-
-def eng(body: str, n: int = 9) -> IncomingMessage:
-    return msg(body, room=config.ROOM_ENG, user="pm", n=n)
+    posts = handle(eng("@frontdesk hello"), store, FakeModels())
+    assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m9")]
 
 
 def test_status_with_no_tickets(store: Store) -> None:
@@ -280,5 +341,5 @@ def test_status_is_not_a_command_in_the_support_room(store: Store) -> None:
 
 
 def test_a_sentence_starting_with_status_is_not_the_command(store: Store) -> None:
-    posts = handle(eng("@frontdesk status of BL-1 please"), store, FakeModels())
+    posts = handle(eng("@frontdesk status of the share link please"), store, FakeModels())
     assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m9")]

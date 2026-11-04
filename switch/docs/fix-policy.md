@@ -28,8 +28,11 @@ Work in your own working directory (`C:\bugline-agents\bugline-fixer`), in a clo
 [repro-checklist.md](repro-checklist.md#1-environment).
 
 1. `git checkout main` and `git pull --ff-only`.
-2. Make the branch `fix/demo-app-bl-<n>-<slug>`, where `<slug>` is two to four words of the title
-   in lowercase with hyphens. Example: `fix/demo-app-bl-1-share-link-zero-expenses`.
+2. Make the branch `fix/demo-app-bl-<n>-<slug>-<stamp>`, where `<slug>` is two to four words of
+   the title in lowercase with hyphens and `<stamp>` is the UTC time you start, from
+   `date -u +%m%d%H%M`. Example: `fix/demo-app-bl-1-share-link-zero-expenses-11071432`. The stamp
+   matters: ticket numbers restart at `BL-1` after a demo reset, and the branches of earlier PRs
+   stay on GitHub. Without it a new branch can take an old name, and the push fails.
 3. Write the regression test first, in `demo-app/tests/test_app.py`, using the fixtures in
    `demo-app/tests/conftest.py`. Name it after the behaviour, not the ticket
    (`test_share_summary_for_member_who_paid_nothing`). Run it and see it fail.
@@ -49,18 +52,20 @@ stop.
 
 ## What to post when done
 
-Reply in the ticket's thread, under 10 lines. The first line mentions the front desk, names the
-ticket once, and has the full PR URL:
+You do not close the ticket. The reproducer checks your PR first, and only its `Verified` line
+closes the ticket and tells the reporter.
+
+Reply in the ticket's thread, under 10 lines. The first line asks the reproducer to verify, in
+exactly this form, with the full PR URL and your branch:
 
 ```
-@frontdesk BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/12
+@reproducer please verify BL-1 on PR https://github.com/Ishaan2053/bugline/pull/12 (branch fix/demo-app-bl-1-share-link-zero-expenses-11071432)
 Change: demo-app/app/main.py, share(): average is 0 for a member with no expenses.
 Test: test_share_summary_for_member_who_paid_nothing
 pytest -q: 9 passed
 ```
 
-- Follow `@frontdesk` with a space. `@frontdesk.` does not reach it, because a period can be part
-  of a name.
-- Name only this ticket's id in the message. The front desk reads `BL-<n>` and the
-  `https://github.com/.../pull/<number>` link from it to close the ticket and tell the reporter.
+- The `agents/coder` program sees that first line and hands your reply to whoever holds the
+  `reproducer` role. If nobody does, it says so in the thread.
+- Name only this ticket's id in the message.
 - The PR URL is the full `https://github.com/...` link, not `#12`.

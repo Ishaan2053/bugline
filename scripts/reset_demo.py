@@ -14,7 +14,8 @@ Stop the three agents, then run `python scripts/reset_demo.py --dry-run` to see 
 5. Recreates the demo app's container, which seeds a fresh database, and checks GET /health.
 
 A ticket PR is one whose title starts with a ticket id (switch/docs/fix-policy.md); a ticket
-branch is one whose name holds a ticket id, like fix/demo-app-bl-1-share-link.
+branch is one whose name holds a ticket id, like the fixer's fix/demo-app-bl-1-share-link-11071432
+or the reproducer's local verify-bl-1.
 """
 
 import argparse
@@ -128,10 +129,9 @@ def reset_remote(shell: Shell, repo: Path, keep: set[int]) -> None:
         if TICKET_BRANCH_RE.search(branch) and branch not in kept_branches:
             shell.change(["git", "push", "origin", "--delete", branch], repo)
     if kept_branches:
-        print(
-            "  note: a new fix branch must not reuse a kept PR's branch name: "
-            + ", ".join(sorted(kept_branches))
-        )
+        # Tickets restart at BL-1, so these names come back. The fixer's branch names end in a
+        # time stamp (switch/docs/fix-policy.md), so a new run cannot take one of them.
+        print("  note: kept PR branches stay on origin: " + ", ".join(sorted(kept_branches)))
 
 
 def reseed_demo_app(
