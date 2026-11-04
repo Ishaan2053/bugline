@@ -85,15 +85,15 @@ room:
     - name: reproducer
       exclusive: false
       instructions: |
-        Reproduce the bug tickets the front desk posts here. Follow
-        switch/docs/repro-checklist.md and post your verdict in the ticket's
-        thread. Never guess.
+        Reproduce the bug tickets the front desk posts here, and verify the
+        fixer's PRs. Follow switch/docs/repro-checklist.md and post your
+        verdict in the ticket's thread. Never guess.
     - name: fixer
       exclusive: true
       instructions: |
         Fix a ticket only after the PM approves it in the ticket's thread.
-        Follow switch/docs/fix-policy.md. Post the PR link to @frontdesk in
-        that thread when done.
+        Follow switch/docs/fix-policy.md. When done, ask @reproducer in that
+        thread to verify the PR.
   references:
     - type: github
       name: bugline-repo

@@ -165,8 +165,11 @@ def make_layout(tmp_path: Path, registered: bool) -> bootstrap.Layout:
         fd_env.write_text(
             f"{url}\nSWITCH_REGISTRATION_KEY=reg\n"
             f"SWITCH_SUPPORT_ROOM_ID={SUPPORT}\nSWITCH_ENG_ROOM_ID={ENG}\n"
+            "SWITCH_REPRODUCER_AGENT_ID=a-repro\n"
         )
-        coder_env.write_text(f"{url}\nSWITCH_ENG_ROOM_ID={ENG}\n")
+        coder_env.write_text(
+            f"{url}\nSWITCH_ENG_ROOM_ID={ENG}\nFRONTDESK_AGENT_NAME=bugline-frontdesk\n"
+        )
     return bootstrap.Layout(
         agents=tuple(agents),
         room_names={"support": "bugline-support", "eng": "bugline-eng"},
@@ -177,6 +180,8 @@ def make_layout(tmp_path: Path, registered: bool) -> bootstrap.Layout:
         registration_key_var="SWITCH_REGISTRATION_KEY",
         frontdesk_room_vars={"support": "SWITCH_SUPPORT_ROOM_ID", "eng": "SWITCH_ENG_ROOM_ID"},
         coder_eng_room_var="SWITCH_ENG_ROOM_ID",
+        verifier_id_var="SWITCH_REPRODUCER_AGENT_ID",
+        frontdesk_name_var="FRONTDESK_AGENT_NAME",
     )
 
 
@@ -216,7 +221,10 @@ def test_empty_server_is_set_up(tmp_path: Path, capsys: pytest.CaptureFixture) -
     assert eng["yaml"] == bootstrap.TEMPLATES["eng"].read_text(encoding="utf-8")
     assert eng["inputs"] == {"room": "bugline-eng", "bridge": "Bugline Slack", **ROLES_BY_NAME}
     assert "SWITCH_REGISTRATION_KEY=reg-secret" in layout.frontdesk_env.read_text()
+    # The verify hand-off: only the reproducer's Verified closes; verdicts go to the front desk.
+    assert "SWITCH_REPRODUCER_AGENT_ID=a-repro" in layout.frontdesk_env.read_text()
     assert f"SWITCH_ENG_ROOM_ID={ENG}" in layout.coder_env.read_text()
+    assert "FRONTDESK_AGENT_NAME=bugline-frontdesk" in layout.coder_env.read_text()
     out = capsys.readouterr().out
     assert "reg-secret" not in out and "agent-secret" not in out
 
@@ -297,6 +305,20 @@ def test_a_connection_with_channel_creation_off_stops(tmp_path: Path) -> None:
     fake.bridges[1]["channel_creation_enabled"] = False
     with pytest.raises(bootstrap.Stop, match="Allow creating channels from Switch"):
         run(fake, make_layout(tmp_path, registered=False), True)
+
+
+def test_a_setup_from_before_the_verify_handoff_gets_its_two_settings(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    layout = make_layout(tmp_path, registered=True)
+    for path in (layout.frontdesk_env, layout.coder_env):
+        lines = path.read_text().splitlines()[:-1]  # make_layout writes the new setting last
+        path.write_text("\n".join(lines) + "\n")
+    run(FakeSwitch(finished=True), layout, False)
+
+    out = capsys.readouterr().out
+    assert "agents/frontdesk/.env: updated (SWITCH_REPRODUCER_AGENT_ID)" in out
+    assert "agents/coder/.env: updated (FRONTDESK_AGENT_NAME)" in out
 
 
 def test_set_env_values_changes_only_what_differs(tmp_path: Path) -> None:

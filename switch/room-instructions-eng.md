@@ -9,8 +9,8 @@ This room is where bug reports from users are reproduced, approved and fixed. Re
 | Who | Addressed as | Does | Takes instructions from |
 | --- | --- | --- | --- |
 | PM (person, room owner) | | Reads verdicts, approves fixes, merges PRs | |
-| `bugline-frontdesk` | `@frontdesk` | Posts new tickets; closes them when the fixer reports a PR | anyone |
-| `bugline-repro` | `@reproducer` (role) or `@bugline-repro` | Reproduces a ticket and posts a verdict | the PM and the front desk |
+| `bugline-frontdesk` | `@frontdesk` | Posts new tickets; closes them when the reproducer verifies the PR | anyone |
+| `bugline-repro` | `@reproducer` (role) or `@bugline-repro` | Reproduces a ticket and posts a verdict; verifies the fixer's PR | the PM, the front desk and the fixer |
 | `bugline-fixer` | `@fixer` (role) or `@bugline-fixer` | Fixes a ticket after the PM approves it, opens a PR | the PM only, in this room only |
 
 ## How a ticket moves
@@ -20,8 +20,16 @@ This room is where bug reports from users are reproduced, approved and fixed. Re
 2. The reproducer replies in that thread with a verdict, following `repro-checklist.md`.
 3. The PM reads the verdict. To approve, the PM replies in the thread:
    `@fixer go on BL-<n>, <scope>`.
-4. The fixer works as `fix-policy.md` says and posts the PR link with `@frontdesk BL-<n>`.
-5. The front desk closes the ticket and tells the reporter in `bugline-support`.
+4. The fixer works as `fix-policy.md` says and asks
+   `@reproducer please verify BL-<n> on PR <url> (branch <name>)`.
+5. The reproducer checks out the PR, reruns its script and the tests (`repro-checklist.md`,
+   "Verify a fix"), and posts `@frontdesk Verified BL-<n>: <PR url>` or
+   `@frontdesk Not verified BL-<n>: <why>`.
+6. On `Verified`, the front desk closes the ticket and tells the reporter in `bugline-support`.
+   On `Not verified`, the ticket stays open and the PM decides.
+
+Only the reproducer or the PM can close a ticket, and only with the `Verified` line. The PM can
+post it by hand.
 
 The three documents are attached to this room and are in the repo under `switch/docs/`.
 

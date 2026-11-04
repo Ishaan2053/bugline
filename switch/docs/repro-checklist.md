@@ -100,7 +100,45 @@ Likely cause: <file>, <function>: <one sentence>
 - For `not reproduced`, list what you tried (requests, groups, amounts) so the PM can ask the
   reporter for the difference. Do not offer a cause.
 
-## 5. Never
+## 5. Verify a fix
+
+After the fixer opens a PR, it asks you in the ticket's thread:
+`@reproducer please verify BL-<n> on PR <url> (branch <name>)`. Check the PR, not the fixer's word
+for it. `<N>` is the number at the end of the PR URL.
+
+```powershell
+cd bugline
+git checkout main
+git fetch origin +pull/<N>/head:verify-bl-<n>
+git checkout verify-bl-<n>
+cd demo-app
+python -m scratch.bl_<n>
+pytest -q
+cd ..
+git checkout main
+```
+
+- The scratch script is the one you wrote when you reproduced the ticket. If it is missing, write
+  it again from the ticket (section 2) before you check out the PR.
+- Always end on `main`, even when a step fails.
+- The `+` in the fetch replaces an old `verify-bl-<n>` from an earlier run.
+
+Your reply's first line is the verdict, in exactly one of these two forms. The program sends it to
+the front desk, and the front desk reads it:
+
+```
+@frontdesk Verified BL-1: https://github.com/Ishaan2053/bugline/pull/12
+@frontdesk Not verified BL-1: <one line: what still fails>
+```
+
+- `Verified` only when the script no longer shows the bug **and** every test passes. Then the
+  front desk closes the ticket and tells the reporter.
+- Anything else is `Not verified`, with one line saying what failed. The ticket stays open and the
+  PM reads the thread.
+- Under the verdict, add the script's output and the last line of `pytest -q`. Keep it under 10
+  lines.
+
+## 6. Never
 
 - Never guess an output you did not run. If a step fails, post the failure.
 - Never fix the bug, edit files outside `demo-app/scratch/`, push, or open a PR. That is the

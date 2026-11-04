@@ -12,6 +12,7 @@ import logging
 import sys
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 
 # agents/, so the shared package `common` imports when this runs as `python agent.py`.
@@ -25,6 +26,7 @@ from common.switch_client import (
     SwitchApi,
     connection_id_for,
     load_credentials,
+    reached,
     register,
 )
 
@@ -52,22 +54,20 @@ class Poster:
             await self._post(post.room, post.body, post.thread_id)
             return
         try:
-            result = await self.api.call(
-                "send_targeted_message",
+            result = await self.api.send_targeted(
                 self.connections[post.room].connection_id,
-                body=post.body,
-                target_roles=list(post.target_roles) or None,
-                target_names=list(post.target_names) or None,
-                thread_id=post.thread_id,
+                post.body,
+                post.thread_id,
+                roles=post.target_roles,
+                names=post.target_names,
             )
         except OpError as exc:
             log.warning("targeted message failed (%s); posting it plainly", exc)
             await self._post(post.room, post.body, post.thread_id)
             return
         self._remember(result)
-        statuses = result.get("target_statuses") or {}
-        log.info("%s -> %s", post.room, statuses or "no live target")
-        if post.if_unreachable and not set(statuses.values()) & config.REACHABLE_STATUSES:
+        log.info("%s -> %s", post.room, result.get("target_statuses") or "no live target")
+        if post.if_unreachable and not reached(result):
             await self._post(post.room, post.if_unreachable, result.get("event_id"))
 
     async def _post(self, room: str, body: str, thread_id: str | None) -> None:
@@ -81,18 +81,46 @@ class Poster:
             self.sent.append(result["event_id"])
 
 
+async def verifier_names(api: SwitchApi) -> frozenset[str]:
+    """The name of the agent whose `Verified BL-n` closes a ticket: the reproducer.
+
+    Bootstrap writes its agent id to .env. A message names its sender by participant id, not agent
+    id, so the front desk asks Switch once for the name that agent id has. If the id is missing or
+    the lookup fails, no agent can close a ticket and only the room owner can.
+    """
+    agent_id = config.verifier_agent_id()
+    if not agent_id:
+        log.warning(
+            "%s is not set, so only the room owner can close tickets; run scripts/bootstrap.py",
+            config.VERIFIER_AGENT_ID_ENV,
+        )
+        return frozenset()
+    try:
+        name = ((await api.call("get_agent_detail", agent_id=agent_id)) or {}).get("name")
+    except OpError as exc:
+        log.warning("could not look up agent %s (%s); only the room owner can close", agent_id, exc)
+        return frozenset()
+    log.info("tickets close on `Verified` from %s or from the room owner", name)
+    return frozenset({name} if name else ())
+
+
 async def dispatch(
-    queue: asyncio.Queue[IncomingMessage], store: Store, poster: Poster, worker: ThreadPoolExecutor
+    queue: asyncio.Queue[IncomingMessage],
+    store: Store,
+    poster: Poster,
+    worker: ThreadPoolExecutor,
+    verifiers: frozenset[str] = frozenset(),
 ) -> None:
     """Handle queued messages one at a time, forever. One bad message never stops the loop."""
     loop = asyncio.get_running_loop()
+    handle = partial(handlers.handle, verifiers=verifiers)
     while True:
         msg = await queue.get()
         if msg.message_id in poster.sent:
             continue
         log.info("%s: %s says %r", msg.room, msg.sender_name, msg.body[:80])
         try:
-            posts = await loop.run_in_executor(worker, handlers.handle, msg, store)
+            posts = await loop.run_in_executor(worker, handle, msg, store)
             for post in posts:
                 await poster.run(post)
         except Exception:
@@ -108,6 +136,7 @@ async def serve() -> None:
     log.info("%d ops available: %s", len(ops), ", ".join(ops))
     if missing := [op for op in REQUIRED_OPS if op not in ops]:
         raise RuntimeError(f"bridge does not offer {missing}")
+    verifiers = await verifier_names(api)
 
     connections = {
         room: RoomConnection(
@@ -123,7 +152,7 @@ async def serve() -> None:
         async with asyncio.TaskGroup() as tasks:
             for connection in connections.values():
                 tasks.create_task(connection.run(queue))
-            tasks.create_task(dispatch(queue, store, Poster(api, connections), worker))
+            tasks.create_task(dispatch(queue, store, Poster(api, connections), worker, verifiers))
     finally:
         await api.aclose()
         worker.shutdown(wait=False)

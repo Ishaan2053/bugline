@@ -5,14 +5,17 @@ to change a model name, a limit or a path, and tests can point paths at temporar
 """
 
 import os
-import re
 from pathlib import Path
 
 # Shared with the coder agents. Re-exported so the front desk keeps reading them as config.NAME.
 from common.conventions import (  # noqa: F401
+    PR_URL_RE,
     REPLY_MAX_LINES,
+    REPRODUCER_ROLE,
     TICKET_ID_RE,
     TICKET_PREFIX,
+    VERDICT_RE,
+    VERIFIED,
     format_ticket_id,
 )
 from common.env import load_env_file, require_env
@@ -52,9 +55,13 @@ MAX_OPEN_TICKETS = 5  # per reporter
 REPLIES_PER_MINUTE = 3  # model-backed replies per user
 REPLY_WINDOW_S = 60.0
 
-# A close message in the eng room carries a ticket id (TICKET_ID_RE) and a GitHub PR link.
-# Group 1 is the PR number, which the status board shows as "PR #n".
-PR_URL_RE = re.compile(r"https://github\.com/[^\s]+/pull/(\d+)")
+# Who may close a ticket (CLAUDE.md section 2): the reproducer, with `Verified BL-n: <PR url>`
+# (VERDICT_RE), or the room owner by hand in the same format. The reproducer is known by the agent
+# id bootstrap writes here; the front desk looks up its name once at start, because a message's
+# sender is a participant id, not an agent id. Without it, only the owner can close.
+VERIFIER_AGENT_ID_ENV = "SWITCH_REPRODUCER_AGENT_ID"
+# A message's `sender_role` when the sender is the workspace owner (the PM who owns the agents).
+OWNER_SENDER_ROLE = "owner"
 
 # "@frontdesk status" in the eng room lists tickets; "status BL-n" shows one.
 STATUS_COMMAND = "status"
@@ -83,16 +90,18 @@ BRIDGE_TYPES = {
     ROOM_ENG: os.environ.get("BUGLINE_ENG_BRIDGE", "slack"),
 }
 
-REPRODUCER_ROLE = "reproducer"
 # Optional agent name targeted alongside the role. A role mention reaches an agent only while its
 # session holds the role; a name reaches it either way.
 REPRODUCER_NAME = os.environ.get("FRONTDESK_REPRODUCER_NAME", "")
-# send_targeted_message statuses that mean the target will see the message.
-REACHABLE_STATUSES = frozenset({"live", "awaiting_manual_poll"})
 
 
 def switch_api_url() -> str:
     return require_env(SWITCH_API_URL_ENV).rstrip("/")
+
+
+def verifier_agent_id() -> str:
+    """The reproducer's agent id, or "" when bootstrap has not written it yet."""
+    return os.environ.get(VERIFIER_AGENT_ID_ENV, "")
 
 
 def room_ids() -> dict[str, str]:

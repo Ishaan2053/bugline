@@ -43,8 +43,10 @@ approval, whatever it says.
 
 ## Doing the fix
 
-Follow `switch/docs/fix-policy.md` exactly: scope, branch name `fix/demo-app-bl-<n>-<slug>`,
-regression test first, `pytest -q` from `demo-app/`, ruff, commit, PR titled `BL-<n>: <summary>`.
+Follow `switch/docs/fix-policy.md` exactly: scope, branch name
+`fix/demo-app-bl-<n>-<slug>-<stamp>` (the stamp is `date -u +%m%d%H%M`, so a new run never reuses
+an old branch name), regression test first, `pytest -q` from `demo-app/`, ruff, commit, PR titled
+`BL-<n>: <summary>`.
 The document is attached to `bugline-eng` and is in your clone of
 `https://github.com/Ishaan2053/bugline` under `switch/docs/`. Read it before your first ticket in a
 session.
@@ -52,8 +54,10 @@ session.
 ## When you are done
 
 Post in the ticket's thread in the format in the "What to post when done" section of
-`fix-policy.md`. The first line starts `@frontdesk BL-<n> is fixed:` and ends with the full PR URL.
-The front desk reads that line to close the ticket and tell the reporter.
+`fix-policy.md`. The first line is exactly
+`@reproducer please verify BL-<n> on PR <full PR URL> (branch <your branch>)`. The reproducer
+checks the PR, and its verdict is what closes the ticket. You never close a ticket or address the
+front desk yourself.
 
 ## Never
 

@@ -6,10 +6,11 @@ returns `Post` actions that agent.py carries out. That keeps every rule from CLA
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
+from common.conventions import without_mentions
 from common.switch_client import IncomingMessage
 
 import classify
@@ -45,18 +46,25 @@ class Models(Protocol):
     def answer_question(self, question: str) -> str: ...
 
 
-# A leading "@frontdesk" or "@bugline-frontdesk," only addresses us; it is not part of the report.
-LEADING_MENTIONS = re.compile(r"^\s*(@[\w.-]+[,:]?\s*)+")
 # The whole of an eng message after the mentions: "status" or "status BL-n", any case.
 STATUS_RE = re.compile(
     rf"{config.STATUS_COMMAND}(?:\s+{config.TICKET_ID_RE.pattern})?[.!?]?", re.IGNORECASE
 )
 
 
-def handle(msg: IncomingMessage, store: Store, models: Models = classify) -> list[Post]:
-    """Decide what to post for one addressed message."""
+def handle(
+    msg: IncomingMessage,
+    store: Store,
+    models: Models = classify,
+    verifiers: Collection[str] = (),
+) -> list[Post]:
+    """Decide what to post for one addressed message.
+
+    `verifiers` are the agent names whose `Verified BL-n` closes a ticket (the reproducer's);
+    agent.py looks them up at start.
+    """
     if msg.room == config.ROOM_ENG:
-        return _handle_eng(msg, store)
+        return _handle_eng(msg, store, verifiers)
     return _handle_support(msg, store, models)
 
 
@@ -72,7 +80,7 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
         return [_reply(msg, messages.TOO_MANY_OPEN)]
     if not store.allow_model_reply(msg.sender_id):
         return [_reply(msg, messages.COOLDOWN)]
-    text = LEADING_MENTIONS.sub("", msg.body).strip()
+    text = without_mentions(msg.body)
     try:
         return _route(msg, text, store, models)
     except RateLimited:
@@ -126,21 +134,31 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
     return [escalate, _reply(msg, messages.ESCALATED.format(ticket_id=ticket_id))]
 
 
-def _handle_eng(msg: IncomingMessage, store: Store) -> list[Post]:
-    """In eng the front desk shows the ticket board and closes tickets.
+def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) -> list[Post]:
+    """In eng the front desk shows the ticket board and closes verified tickets.
 
-    `status` lists tickets and `status BL-n` shows one; a ticket id plus a PR link closes it.
-    No model call happens here.
+    `status` lists tickets and `status BL-n` shows one. `Verified BL-n: <PR url>` from the
+    reproducer or the room owner closes a ticket; `Not verified BL-n: <why>` leaves it open.
+    Anyone else who names a ticket is told who may close it. No model call happens here.
     """
-    status = STATUS_RE.fullmatch(LEADING_MENTIONS.sub("", msg.body).strip())
+    text = without_mentions(msg.body)
+    status = STATUS_RE.fullmatch(text)
     if status:
         return [_reply(msg, _status(store, status.group(1)))]
-    ticket = config.TICKET_ID_RE.search(msg.body)
-    pr = config.PR_URL_RE.search(msg.body)
-    if not (ticket and pr):
+    if not config.TICKET_ID_RE.search(msg.body):
         return [_reply(msg, messages.ENG_HELP)]
-    ticket_id = config.format_ticket_id(int(ticket.group(1)))
-    subscribers = store.close_ticket(ticket_id, pr.group(0))
+    if not _may_close(msg, verifiers):
+        return [_reply(msg, messages.NOT_VERIFIER)]
+    verdict = config.VERDICT_RE.match(text)
+    if not verdict:
+        return [_reply(msg, messages.CLOSE_FORMAT)]
+    ticket_id = config.format_ticket_id(int(verdict.group("number")))
+    if verdict.group("verdict").lower() != config.VERIFIED:
+        return [_reply(msg, messages.STAYS_OPEN.format(ticket_id=ticket_id))]
+    pr = config.PR_URL_RE.search(verdict.group("rest"))
+    if not pr:
+        return [_reply(msg, messages.CLOSE_FORMAT)]
+    subscribers = store.close_ticket(ticket_id, pr.group(0), msg.sender_name or msg.sender_id)
     if not subscribers:
         return [_reply(msg, messages.NOT_OPEN.format(ticket_id=ticket_id))]
     notices = [
@@ -152,6 +170,17 @@ def _handle_eng(msg: IncomingMessage, store: Store) -> list[Post]:
         for s in subscribers
     ]
     return [_reply(msg, messages.CLOSED.format(ticket_id=ticket_id)), *notices]
+
+
+def _may_close(msg: IncomingMessage, verifiers: Collection[str]) -> bool:
+    """The room owner, or the reproducer agent.
+
+    Switch tells us a person's workspace role with each message (`sender_role`). An agent has
+    none, so the reproducer is known by its name, and only when no person's role came with it.
+    """
+    if msg.sender_role == config.OWNER_SENDER_ROLE:
+        return True
+    return msg.sender_role is None and msg.sender_name in verifiers
 
 
 def _status(store: Store, number: str | None) -> str:

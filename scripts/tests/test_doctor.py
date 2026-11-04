@@ -54,6 +54,18 @@ def test_running_setup_passes(tmp_path: Path, capsys: pytest.CaptureFixture) -> 
     assert "PASS bugline-fixer connected to bugline-eng" in out
     assert "PASS role fixer (bugline-fixer)" in out
     assert "PASS access rule bugline-fixer (the owner only, in bugline-eng only)" in out
+    assert "PASS verify hand-off settings in both .env files" in out
+
+
+def test_missing_handoff_setting_fails_with_the_fix(tmp_path: Path) -> None:
+    layout = make_layout(tmp_path, registered=True)
+    layout.coder_env.write_text("SWITCH_ENG_ROOM_ID=room-eng\n")  # from before the hand-off
+    check = doctor.handoff_check(layout, AGENT_IDS)
+    assert not check.ok
+    assert check.hint.startswith("FRONTDESK_AGENT_NAME missing or stale")
+    assert doctor.handoff_check(layout, {**AGENT_IDS, "bugline-repro": "a-new"}).hint.startswith(
+        "SWITCH_REPRODUCER_AGENT_ID, FRONTDESK_AGENT_NAME"
+    )
 
 
 def test_free_role_fails_with_the_fix(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 HTTP_TIMEOUT_S = 30.0
 RECONNECT_START_S = 1.0  # WebSocket reconnect backoff, doubled up to the cap
 RECONNECT_CAP_S = 30.0
+# send_targeted_message statuses that mean the target will see the message.
+REACHABLE_STATUSES = frozenset({"live", "awaiting_manual_poll"})
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,9 @@ class IncomingMessage:
     body: str
     message_id: str  # pass as thread_id to reply under this message
     thread_id: str | None  # thread root, or None for a top-level message
+    # The sending person's role in the workspace ("owner", "admin" or "member"), which Switch
+    # reads fresh for each message. None for an agent, or for a chat account no Switch user claimed.
+    sender_role: str | None = None
 
     @property
     def thread_root(self) -> str:
@@ -178,6 +183,26 @@ class SwitchApi:
                 raise
             return await self.post_without_connection(room_id, body)
 
+    async def send_targeted(
+        self,
+        connection_id: str,
+        body: str,
+        thread_id: str | None = None,
+        roles: tuple[str, ...] = (),
+        names: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """`send_targeted_message`: Switch puts `@role` / `@name` in front of `body` and answers
+        `{"event_id", "target_statuses": {agent name: status}}`, which `reached` reads."""
+        result = await self.call(
+            "send_targeted_message",
+            connection_id,
+            body=body,
+            target_roles=list(roles) or None,
+            target_names=list(names) or None,
+            thread_id=thread_id,
+        )
+        return result or {}
+
     async def post_without_connection(self, room_id: str, content: str) -> dict[str, Any]:
         """`POST /agents/{id}/message`: posts with no live connection, but cannot thread."""
         return await self._request(
@@ -190,6 +215,12 @@ class SwitchApi:
         response = await self._http.request(method, url, **kwargs)
         _raise_for_status(response)
         return response.json()
+
+
+def reached(result: dict[str, Any]) -> bool:
+    """Whether any agent a targeted message named will see it. A role nobody holds lists no one."""
+    statuses = result.get("target_statuses") or {}
+    return bool(set(statuses.values()) & REACHABLE_STATUSES)
 
 
 def _raise_for_status(response: httpx.Response) -> None:
@@ -315,4 +346,5 @@ class RoomConnection:
             body=payload.get("body", ""),
             message_id=payload.get("message_id", ""),
             thread_id=payload.get("thread_id"),
+            sender_role=payload.get("sender_role"),
         )

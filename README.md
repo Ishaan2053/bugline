@@ -28,7 +28,7 @@ carries part of the loop:
 | Room links | `bugline-support` → `bugline-eng` "escalates to"; `bugline-eng` → `bugline-support` "supports". Agents see that the other room exists and what it is for. A link grants no access. | Agents in `bugline-eng` have no idea the tickets come from users in a Telegram group, or where the answer goes back to. |
 | Shared role `reproducer` | The front desk's ticket addresses `@reproducer`. Whoever holds the role gets it. | Tickets go to a hard-coded agent name. |
 | Exclusive role `fixer` + access rule | One agent at a time holds `fixer`. The access rule on `bugline-fixer` admits only its owner (the PM), only in `bugline-eng`. In the live run a second Switch user, `sam`, wrote `@fixer fix BL-2 now`; Switch answered "You're not permitted to direct messages to me in this room — my operator has restricted who can address me here." in the fixer's name, and the fixer program never received the message. This is the approval gate. | The gate is an `if` statement inside the agent, and a prompt can talk its way past it. |
-| Targeted messages between agents | The front desk hands a ticket to the reproducer with `send_targeted_message`, which also says whether the target is reachable. The fixer hands the PR back with `@frontdesk BL-n`. | Agents poll a shared database or a queue you build. |
+| Targeted messages between agents | Three hand-offs, each with `send_targeted_message`, which also says whether the target is reachable. The front desk hands a ticket to whoever holds `reproducer`. The fixer hands its PR to `reproducer` to verify. The reproducer hands its `Verified BL-n` to the front desk by name. Only that line, from the reproducer or from the room owner, closes a ticket: the front desk tells the owner by the `sender_role` Switch puts on each message, and anyone else who names a ticket is told who may close it. | Agents poll a shared database or a queue you build, and anyone in the room can close a ticket. |
 | Aliases | `bugline-frontdesk` is `@frontdesk` in both rooms. An agent holds one role across all rooms, so a per-room alias is how one agent works two rooms. | Users type internal agent names. |
 | Room instructions and the `bugline-kit` package | Each room has its rules from `switch/room-instructions-*.md`. The `bugline-kit` package holds three library documents, `intake-rules.md`, `repro-checklist.md` and `fix-policy.md`, plus the `bugline-repo` GitHub reference, and is attached to both rooms. `scripts/bootstrap.py` makes the documents from the files in `switch/docs/`, so the text lives in one place. | Every agent's prompt carries its own copy of the rules, and the copies drift. |
 | Custom agents over the agent protocol | All three agents are programs in this repo that register over Switch's agent protocol and hold one WebSocket per room. Switch delivers only messages addressed to them. The coders take their roles with `assume_role` each time they connect. Who may address each agent is an access rule stored on the agent in Switch, not in its code. | You build the addressing, the per-room connections, the presence and the refusals yourself. |
@@ -61,8 +61,9 @@ flowchart LR
     PM -- "4. @fixer go on BL-n" --> GATE
     GATE --> F
     F -- "5. branch, test, PR" --> GH
-    F -- "6. @frontdesk BL-n is fixed" --> FD
-    FD -- "7. fixed, with PR link<br/>(reporter + subscribers)" --> U
+    F -- "6. please verify BL-n on PR" --> R
+    R -- "7. Verified BL-n: PR link" --> FD
+    FD -- "8. fixed, with PR link<br/>(reporter + subscribers)" --> U
 ```
 
 All three agents are custom agents on the Switch agent protocol, running on the author's Windows
@@ -219,8 +220,11 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
 
    It logs in as Console's local admin, registers the three agents, makes `bugline-eng` from the
    template, puts the agents in the rooms, sets the access rules, room instructions, links and
-   aliases, creates `bugline-kit`, and writes the API URL and room ids into both `.env` files. It
-   prints `created`, `exists` or `skipped (why)` for each thing, so it is safe to run again.
+   aliases, creates `bugline-kit`, and writes the API URL and room ids into both `.env` files,
+   with the reproducer's agent id for the front desk and the front desk's name for the coders
+   (the verify hand-off). It prints `created`, `exists` or `skipped (why)` for each thing, so it
+   is safe to run again. A setup from before the verify step needs one more run to get those two
+   settings; until then only the room owner can close a ticket.
 4. **Start the agents and quiet the rooms.** One terminal each:
 
    ```powershell
@@ -255,8 +259,8 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
    clones to `origin/main`, closes ticket PRs and deletes their branches except `--keep` (default
    #18 and #19, the PRs this README cites), and recreates the demo app's container. It refuses
    while an agent is connected. `doctor.py` prints one PASS or FAIL line per thing the demo needs:
-   server, bridges, rooms, agent connections, keys, roles, access rules, `claude`, `gh`, `git` and
-   the clones. Record only when every line is PASS. `--gemini` adds one model call.
+   server, bridges, rooms, agent connections, keys, the verify hand-off settings in both `.env`
+   files, roles, access rules, `claude`, `gh`, `git` and the clones. Record only when every line is PASS. `--gemini` adds one model call.
 6. Run the seeded paths in
    [switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
 
@@ -325,11 +329,24 @@ One bug, fault 1 (the share link error), from report to fix, across both apps, a
    `@fixer go on BL-1, keep it to the share handler, add a regression test`. The fixer branched,
    wrote the failing test, guarded the division, ran `pytest -q` and ruff, opened
    [PR #18](https://github.com/Ishaan2053/bugline/pull/18) titled `BL-1: ...`
-   ([fix-policy.md](switch/docs/fix-policy.md)), and posted `@frontdesk BL-1 is fixed: <PR link>`.
+   ([fix-policy.md](switch/docs/fix-policy.md)). It now ends by handing the PR on:
+   `@reproducer please verify BL-1 on PR <link> (branch <name>)`. On Nov 4, before this step
+   existed, it posted `@frontdesk BL-1 is fixed: <PR link>` and the front desk closed the ticket
+   on that.
    <!-- author: add screenshot of the fixer's PR message and the PR -->
-6. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
+6. **Verify.** The reproducer fetches the PR into a local branch, reruns the scratch script that
+   proved the bug and `pytest -q`, goes back to `main`, and posts
+   `@frontdesk Verified BL-1: <PR link>`, or `Not verified BL-1: <why>`, which leaves the ticket
+   open for the PM ([repro-checklist.md, "Verify a fix"](switch/docs/repro-checklist.md#5-verify-a-fix)).
+   This is a second agent-to-agent hand-off over a Switch role with no person in the middle,
+   while the PM stays the only one who can start a fix. The front desk accepts the close only
+   from the reproducer or the room owner; anyone else who names a ticket is told who may close
+   it. (Not yet run live.)
+   <!-- author: add screenshot of the Verified line -->
+7. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
    "Ishaan2053, BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/18". For `BL-2`, a
    second user's duplicate report was matched to it, and both reporters got the message.
+   `@frontdesk status` in `bugline-eng` shows who closed each ticket.
    <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
 
 PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
@@ -346,7 +363,7 @@ Three agents, one job each. Switch, not the agents, decides who may instruct eac
 | Agent | Addressed as | Runtime | Switch role | Who may instruct it | Brief |
 | --- | --- | --- | --- | --- | --- |
 | `bugline-frontdesk` | `@frontdesk` (alias in both rooms) | Custom Python agent over the Switch agent protocol ([agents/frontdesk](agents/frontdesk/README.md)); Gemini through `google-genai` | none (an alias, since an agent holds one role across all rooms) | Anyone | [frontdesk.md](switch/agent-briefs/frontdesk.md) |
-| `bugline-repro` | `@reproducer`, `@bugline-repro` | Custom Python agent ([agents/coder](agents/coder/README.md), `CODER_ROLE=reproducer`) that runs Claude Code headless in its own clone | `reproducer`, shared | Its owner (the PM) and the owner's agents, so the front desk | [reproducer.md](switch/agent-briefs/reproducer.md) |
+| `bugline-repro` | `@reproducer`, `@bugline-repro` | Custom Python agent ([agents/coder](agents/coder/README.md), `CODER_ROLE=reproducer`) that runs Claude Code headless in its own clone | `reproducer`, shared | Its owner (the PM) and the owner's agents, so the front desk (tickets) and the fixer (PRs to verify) | [reproducer.md](switch/agent-briefs/reproducer.md) |
 | `bugline-fixer` | `@fixer`, `@bugline-fixer` | The same program with `CODER_ROLE=fixer` | `fixer`, exclusive | Its owner (the PM) only, in `bugline-eng` only | [fixer.md](switch/agent-briefs/fixer.md) |
 
 The coders run Claude Code with `--permission-mode dontAsk`, a per-role allow list and a deny list
@@ -365,10 +382,13 @@ or agents depends on it beyond the user guide and the repo reference.
 
 What one loop cost on Nov 4, from `agents/frontdesk/calls.log` and the coder logs:
 
-| Loop | Front desk Gemini calls | Claude Code runs | Report to "fixed" in Telegram |
-| --- | --- | --- | --- |
-| `BL-1` (fault 1) | 2 (`gemini-3.5-flash-lite`, 3,053 tokens): the vague report, then the complete one | 3: reproducer 22 s (refused, see below), reproducer again 26 s, fixer 55 s | 16 min 57 s, most of it the permission fix and restart between the two reproducer runs |
-| `BL-2` (fault 2) | 1 to open it, 2 more for the second user's duplicate (classify, duplicate check) | 2: reproducer 24 s, fixer 51 s | 2 min 25 s, both reporters told |
+| Loop | Front desk Gemini calls | Claude Code runs | Verify | Report to "fixed" in Telegram |
+| --- | --- | --- | --- | --- |
+| `BL-1` (fault 1) | 2 (`gemini-3.5-flash-lite`, 3,053 tokens): the vague report, then the complete one | 3: reproducer 22 s (refused, see below), reproducer again 26 s, fixer 55 s | not in this run | 16 min 57 s, most of it the permission fix and restart between the two reproducer runs |
+| `BL-2` (fault 2) | 1 to open it, 2 more for the second user's duplicate (classify, duplicate check) | 2: reproducer 24 s, fixer 51 s | not in this run | 2 min 25 s, both reporters told |
+
+The verify step adds one more Claude Code run per loop and no Gemini call. These loops ran before
+it existed; its time is not measured yet (a reproduction took 22 to 26 s).
 
 The whole smoke run, every seeded path, took 13 Gemini calls. The target was under 25 per loop.
 

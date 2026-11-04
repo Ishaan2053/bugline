@@ -13,7 +13,9 @@ Console bundles. It does everything else, in order, and prints "created", "updat
    switch/bugline-support.template.yaml, or, where Switch cannot create chats (Telegram), stops
    and says what to do.
 5. The same for bugline-eng, from switch/bugline.template.yaml.
-6. Writes the API URL and room ids into agents/frontdesk/.env and agents/coder/.env.
+6. Writes the API URL and room ids into agents/frontdesk/.env and agents/coder/.env, plus what
+   the agents need for the verify hand-off: the reproducer's agent id for the front desk and the
+   front desk's name for the coders.
 7. Puts the front desk in both rooms and the two coders in bugline-eng.
 8. Sets the access rules: front desk open to anyone, reproducer the owner and the owner's agents,
    fixer the owner only and only in bugline-eng.
@@ -118,6 +120,8 @@ class Layout:
     registration_key_var: str
     frontdesk_room_vars: dict[str, str]  # "support" / "eng" -> env var for the room id
     coder_eng_room_var: str
+    verifier_id_var: str  # front desk: the reproducer's agent id, whose Verified closes a ticket
+    frontdesk_name_var: str  # coders: the front desk's agent name, where verdicts go
 
 
 def _load(name: str, path: Path) -> ModuleType:
@@ -158,6 +162,20 @@ def load_layout() -> Layout:
         registration_key_var=frontdesk.REGISTRATION_KEY_ENV,
         frontdesk_room_vars=dict(frontdesk.ROOM_ID_ENVS),
         coder_eng_room_var=coder.ENG_ROOM_ID_ENV,
+        verifier_id_var=frontdesk.VERIFIER_AGENT_ID_ENV,
+        frontdesk_name_var=coder.FRONTDESK_AGENT_NAME_ENV,
+    )
+
+
+def handoff_env(layout: Layout, agent_ids: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+    """What the agents need to hand work to each other: the reproducer's agent id for the front
+    desk (only its Verified closes a ticket) and the front desk's name for the coders (where the
+    reproducer sends its verdict). scripts/doctor.py checks the .env files against the same pair.
+    """
+    names = {spec.role: spec.name for spec in layout.agents}
+    return (
+        {layout.verifier_id_var: agent_ids.get(names["reproducer"], "")},
+        {layout.frontdesk_name_var: names["frontdesk"]},
     )
 
 
@@ -393,10 +411,18 @@ def ensure_room(
     return result["room_id"] if result else f"<{wanted}>"
 
 
-def write_env_files(layout: Layout, api_url: str, room_ids: dict[str, str], dry_run: bool) -> None:
+def write_env_files(
+    layout: Layout,
+    api_url: str,
+    room_ids: dict[str, str],
+    agent_ids: dict[str, str],
+    dry_run: bool,
+) -> None:
+    to_frontdesk, to_coders = handoff_env(layout, agent_ids)
     frontdesk = {layout.api_url_var: api_url}
     frontdesk |= {layout.frontdesk_room_vars[key]: room_ids[key] for key in room_ids}
-    coder = {layout.api_url_var: api_url, layout.coder_eng_room_var: room_ids["eng"]}
+    frontdesk |= to_frontdesk
+    coder = {layout.api_url_var: api_url, layout.coder_eng_room_var: room_ids["eng"], **to_coders}
     for label, path, values in (
         ("agents/frontdesk/.env", layout.frontdesk_env, frontdesk),
         ("agents/coder/.env", layout.coder_env, coder),
@@ -586,7 +612,7 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
         room_ids[key] = ensure_room(gw, key, wanted[key], bridge, rooms, roles)
 
     print("6. Agent settings files")
-    write_env_files(layout, opts.api_url, room_ids, opts.dry_run)
+    write_env_files(layout, opts.api_url, room_ids, agent_ids, opts.dry_run)
 
     print("7. Agents in rooms")
     for key, specs in members.items():
