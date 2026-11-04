@@ -76,6 +76,12 @@ ROOM_SUPPORT = "support"
 ROOM_ENG = "eng"
 ROOM_NAMES = {ROOM_SUPPORT: "bugline-support", ROOM_ENG: "bugline-eng"}
 ROOM_ID_ENVS = {ROOM_SUPPORT: "SWITCH_SUPPORT_ROOM_ID", ROOM_ENG: "SWITCH_ENG_ROOM_ID"}
+# The chat app each room is on, as Switch names its connection types ("bridge_type"). Only
+# scripts/bootstrap.py reads it, to pick the connection; its flags override these.
+BRIDGE_TYPES = {
+    ROOM_SUPPORT: os.environ.get("BUGLINE_SUPPORT_BRIDGE", "telegram"),
+    ROOM_ENG: os.environ.get("BUGLINE_ENG_BRIDGE", "slack"),
+}
 
 REPRODUCER_ROLE = "reproducer"
 # Optional agent name targeted alongside the role. A role mention reaches an agent only while its

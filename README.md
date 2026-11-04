@@ -32,7 +32,7 @@ carries part of the loop:
 | Aliases | `bugline-frontdesk` is `@frontdesk` in both rooms. An agent holds one role across all rooms, so a per-room alias is how one agent works two rooms. | Users type internal agent names. |
 | Room instructions and the `bugline-kit` package | Each room has its rules from `switch/room-instructions-*.md`. The `bugline-kit` package holds three library documents, `intake-rules.md`, `repro-checklist.md` and `fix-policy.md`, plus the `bugline-repo` GitHub reference, and is attached to both rooms. `scripts/bootstrap.py` makes the documents from the files in `switch/docs/`, so the text lives in one place. | Every agent's prompt carries its own copy of the rules, and the copies drift. |
 | Custom agents over the agent protocol | All three agents are programs in this repo that register over Switch's agent protocol and hold one WebSocket per room. Switch delivers only messages addressed to them. The coders take their roles with `assume_role` each time they connect. Who may address each agent is an access rule stored on the agent in Switch, not in its code. | You build the addressing, the per-room connections, the presence and the refusals yourself. |
-| Room template | `switch/bugline.template.yaml` creates `bugline-eng`, its Slack channel, the roles, the alias and the repo reference in one server call. | You click through the room, channel, roles and reference by hand. |
+| Room template | `switch/bugline.template.yaml` creates `bugline-eng`, its Slack channel, the roles, the alias and the repo reference in one server call. `switch/bugline-support.template.yaml` does the same for `bugline-support` on any chat app where Switch can create channels (not Telegram). | You click through the room, channel, roles and reference by hand. |
 
 ## Architecture
 
@@ -80,7 +80,9 @@ here". Questions, requests, off-topic messages, incomplete reports and duplicate
 ## Reproduce it in 15 minutes
 
 Part A runs from a fresh clone with Docker and Python. Part B needs a Switch server, a Telegram bot
-and a Slack app of your own; the chat-app steps are manual, and one script does the rest.
+and a Slack app of your own; the chat-app steps are manual, and one script does the rest. Without
+Telegram or Slack, the [Mattermost variant](#variant-mattermost-only-no-telegram-or-slack) uses
+the Mattermost that Switch Console bundles (untested by the author).
 [docs/switch-setup.md](docs/switch-setup.md) walks through part B in full.
 
 ### Prerequisites
@@ -167,10 +169,10 @@ pytest -q
 python agent.py --help
 ```
 
-Expect `8 passed` for the demo app and `37 passed, 1 skipped` for the front desk (the skipped test
+Expect `8 passed` for the demo app and `47 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
 `--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
-`agents/common` (`12 passed`), `agents/coder` (`13 passed`) and `scripts` (`13 passed`).
+`agents/common` (`12 passed`), `agents/coder` (`13 passed`) and `scripts` (`19 passed`).
 
 ### Part B: Switch, Telegram and Slack
 
@@ -193,11 +195,26 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
    # in each clone's demo-app\: py -3.14 -m venv .venv; .\.venv\Scripts\pip install -r requirements-dev.txt
    ```
 
+   ```bash
+   cd agents/frontdesk && python3.14 -m venv .venv && .venv/bin/pip install -r requirements.txt
+   cp .env.example .env   # set GEMINI_API_KEY; bootstrap fills in the rest
+   cd ../coder && python3.14 -m venv .venv && .venv/bin/pip install -r requirements.txt
+   cd ../..
+   git clone https://github.com/Ishaan2053/bugline.git ~/bugline-agents/bugline-repro/bugline
+   git clone https://github.com/Ishaan2053/bugline.git ~/bugline-agents/bugline-fixer/bugline
+   # in each clone's demo-app/: python3.14 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+   ```
+
 3. **Everything else in Switch, one command.** From the repo root:
 
    ```powershell
    agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --dry-run
    agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py
+   ```
+
+   ```bash
+   agents/frontdesk/.venv/bin/python scripts/bootstrap.py --dry-run
+   agents/frontdesk/.venv/bin/python scripts/bootstrap.py
    ```
 
    It logs in as Console's local admin, registers the three agents, makes `bugline-eng` from the
@@ -210,6 +227,12 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
    cd agents\frontdesk; .\.venv\Scripts\python agent.py
    cd agents\coder; $env:CODER_ROLE = "reproducer"; .\.venv\Scripts\python agent.py
    cd agents\coder; $env:CODER_ROLE = "fixer"; .\.venv\Scripts\python agent.py
+   ```
+
+   ```bash
+   cd agents/frontdesk && .venv/bin/python agent.py
+   cd agents/coder && CODER_ROLE=reproducer .venv/bin/python agent.py
+   cd agents/coder && CODER_ROLE=fixer .venv/bin/python agent.py
    ```
 
    Then type `!follow-ups off` in both rooms, so agents act only when named.
@@ -236,6 +259,45 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
    the clones. Record only when every line is PASS. `--gemini` adds one model call.
 6. Run the seeded paths in
    [switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
+
+#### Variant: Mattermost only, no Telegram or Slack
+
+> **Untested by the author.** The author's demo runs on Telegram and Slack. For this variant, the
+> bootstrap flags are covered by unit tests against a fake server, and
+> `bootstrap.py --dry-run --support-bridge mattermost --eng-bridge mattermost` was run against the
+> author's server: bundled Mattermost was connected and `active`, and the dry run planned both
+> rooms from the templates. No real run was made on Mattermost.
+>
+> Switch Console starts a Mattermost server along with its local server (in Docker, so Docker
+> must be running) and connects it as the messaging app `Mattermost`. Switch can create channels
+> there, so bootstrap makes both rooms, `bugline-support` from
+> [`switch/bugline-support.template.yaml`](switch/bugline-support.template.yaml) and `bugline-eng`
+> from [`switch/bugline.template.yaml`](switch/bugline.template.yaml). You need no Telegram bot and
+> no Slack app:
+>
+> - Skip step 1. Do step 2. In step 3, add two flags:
+>
+>   ```powershell
+>   agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --support-bridge mattermost --eng-bridge mattermost
+>   ```
+>
+>   ```bash
+>   agents/frontdesk/.venv/bin/python scripts/bootstrap.py --support-bridge mattermost --eng-bridge mattermost
+>   ```
+>
+> - Do step 4. Open Mattermost from Console Home, or at `http://localhost:<port>`, where the port
+>   is `mattermost` in Console's `ports.json`. Both rooms are channels there; type
+>   `!follow-ups off` in each.
+> - The end user is a second Mattermost account (Console's Mattermost allows sign-up from its
+>   sign-in page). The same account tests the gate: `@fixer` from it should be refused, because
+>   the fixer's access rule admits only its owner. Neither the front desk's "anyone" rule nor the
+>   refusal was tried with a Mattermost account, and the refusal wording may differ from Slack's.
+>
+> The flags are not saved. Bootstrap run again without them goes back to Telegram and Slack and
+> rewrites the room ids in both `.env` files and the fixer's access rule. To keep Mattermost, set
+> `BUGLINE_SUPPORT_BRIDGE=mattermost` and `BUGLINE_ENG_BRIDGE=mattermost` in
+> `agents/frontdesk/.env`. Other chat apps where Switch can create channels (Discord, Teams) take
+> the same flags; see [switch-setup.md](docs/switch-setup.md#other-chat-apps).
 
 ## The workflow, step by step
 
@@ -365,7 +427,7 @@ demo-app/            FastAPI + SQLite expense splitter with seeded faults, tests
 agents/common/       shared by all three agents: Switch protocol client, ticket id format, .env loading
 agents/frontdesk/    the front desk: handlers, Gemini calls, SQLite store, Dockerfile
 agents/coder/        the reproducer and the fixer: one program that runs Claude Code headless
-switch/              room template, room instructions, docs/ (the bugline-kit documents), agent-briefs/
+switch/              room templates, room instructions, docs/ (the bugline-kit documents), agent-briefs/
 scripts/             bootstrap.py: everything in Switch after the chat-app connections, idempotent;
                      doctor.py: checks before a recording; reset_demo.py: back to BL-1
 docs/                switch-setup.md (Switch walkthrough and troubleshooting), build-journal.md

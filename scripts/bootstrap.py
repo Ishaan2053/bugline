@@ -1,14 +1,18 @@
 """Stand Bugline up on a Switch server with one command: `python scripts/bootstrap.py`.
 
-Run it after the chat-app steps in docs/switch-setup.md (a Telegram connection whose bot is in the
-bugline-support group, and a Slack connection). It does everything else, in order, and prints
-"created", "updated", "exists" or "skipped (why)" for each thing, so it is safe to run again:
+Run it after the chat-app steps in docs/switch-setup.md. By default bugline-support is on Telegram
+(the bot must already be in the bugline-support group) and bugline-eng on Slack;
+`--support-bridge` and `--eng-bridge` pick other chat apps, such as the Mattermost that Switch
+Console bundles. It does everything else, in order, and prints "created", "updated", "exists" or
+"skipped (why)" for each thing, so it is safe to run again:
 
 1. Finds the server's API URL and logs in as the Console admin.
 2. Reuses the registration key in agents/frontdesk/.env, or creates one there.
 3. Registers bugline-frontdesk, bugline-repro and bugline-fixer if their credentials are missing.
-4. Finds the Telegram room bugline-support. If it is missing, it stops and says what to do.
-5. Creates bugline-eng on the Slack connection from switch/bugline.template.yaml.
+4. Finds bugline-support on its chat app's connection. If it is missing, it creates it from
+   switch/bugline-support.template.yaml, or, where Switch cannot create chats (Telegram), stops
+   and says what to do.
+5. The same for bugline-eng, from switch/bugline.template.yaml.
 6. Writes the API URL and room ids into agents/frontdesk/.env and agents/coder/.env.
 7. Puts the front desk in both rooms and the two coders in bugline-eng.
 8. Sets the access rules: front desk open to anyone, reproducer the owner and the owner's agents,
@@ -50,13 +54,16 @@ sys.path.insert(0, str(AGENTS_DIR))  # so `common` imports, as it does for the a
 from common.env import read_env_file  # noqa: E402
 from common.switch_client import Credentials, OpError, load_credentials, register  # noqa: E402
 
-TEMPLATE = REPO_ROOT / "switch" / "bugline.template.yaml"
-APP_DIR = "demo-app"  # in the repo and in each coder's clone: the app, its tests and its venv
-INSTRUCTIONS = {
-    key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for key in ("support", "eng")
+ROOM_KEYS = ("support", "eng")  # the keys of the front desk's ROOM_NAMES, in setup order
+# The template that creates each room where Switch can create chats.
+TEMPLATES = {
+    "support": REPO_ROOT / "switch" / "bugline-support.template.yaml",
+    "eng": REPO_ROOT / "switch" / "bugline.template.yaml",
 }
+APP_DIR = "demo-app"  # in the repo and in each coder's clone: the app, its tests and its venv
+INSTRUCTIONS = {key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for key in ROOM_KEYS}
 LINKS = [("support", "eng", "escalates to"), ("eng", "support", "supports")]
-FRONTDESK_ALIAS = "frontdesk"  # the template gives the same alias in bugline-eng
+FRONTDESK_ALIAS = "frontdesk"  # both templates give this alias
 REFERENCE_NAME = "bugline-repo"  # made by the template's `references:`
 KIT_NAME = "bugline-kit"
 KIT_DESCRIPTION = "The rules Bugline's agents work by, and the repo they work on"
@@ -104,6 +111,7 @@ class Layout:
 
     agents: tuple[AgentSpec, ...]
     room_names: dict[str, str]  # "support" / "eng" -> room name
+    bridge_types: dict[str, str]  # "support" / "eng" -> chat app, e.g. "telegram"
     frontdesk_env: Path
     coder_env: Path
     api_url_var: str
@@ -143,6 +151,7 @@ def load_layout() -> Layout:
             *(AgentSpec(c.role, c.agent_name, c.description, c.credentials_path) for c in coders),
         ),
         room_names=dict(frontdesk.ROOM_NAMES),
+        bridge_types=dict(frontdesk.BRIDGE_TYPES),
         frontdesk_env=frontdesk.AGENT_DIR / ".env",
         coder_env=coder.AGENT_DIR / ".env",
         api_url_var=frontdesk.SWITCH_API_URL_ENV,
@@ -150,6 +159,11 @@ def load_layout() -> Layout:
         frontdesk_room_vars=dict(frontdesk.ROOM_ID_ENVS),
         coder_eng_room_var=coder.ENG_ROOM_ID_ENV,
     )
+
+
+def room_members(layout: Layout) -> dict[str, tuple[AgentSpec, ...]]:
+    """Who belongs in each room: the front desk in both, the coders in bugline-eng only."""
+    return {"support": layout.agents[:1], "eng": layout.agents}
 
 
 class Gateway:
@@ -315,50 +329,68 @@ def register_agents(gw: Gateway, layout: Layout, key: str | None) -> dict[str, s
     return {spec.name: on_server[spec.name] for spec in layout.agents}
 
 
-def pick_slack(bridges: list[dict], display_name: str | None) -> dict:
-    """The one Slack connection, or the one with this display name."""
-    found = [b for b in bridges if b.get("bridge_type") == "slack"]
+def app_name(bridge_type: str) -> str:
+    """A chat app's name for people: "telegram" -> "Telegram"."""
+    return bridge_type.capitalize()
+
+
+def pick_bridge(bridges: list[dict], bridge_type: str, display_name: str | None, flag: str) -> dict:
+    """The one connection of this type, or the one with this display name. `flag` names the
+    command-line option that picks a connection, for the message when there are several."""
+    found = [b for b in bridges if b.get("bridge_type") == bridge_type]
+    names = ", ".join(repr(b.get("display_name")) for b in found) or "none"
     if display_name:
         found = [b for b in found if b.get("display_name") == display_name]
     if len(found) != 1:
-        names = ", ".join(repr(b.get("display_name")) for b in found) or "none"
-        hint = "Pass --slack-connection with one of them." if found else "Connect Slack first."
+        app = app_name(bridge_type)
+        hint = f"Pass {flag} with one of them." if names != "none" else f"Connect {app} first."
         raise Stop(
-            f"Expected one Slack connection, found {names}. {hint} See docs/switch-setup.md."
+            f"Expected one {app} connection, found {names}. {hint} See docs/switch-setup.md."
         )
     return found[0]
 
 
-def find_support_room(bridges: list[dict], rooms: list[dict], wanted: str) -> str:
-    if not any(b.get("bridge_type") == "telegram" for b in bridges):
-        raise Stop("No Telegram connection. Connect Telegram first; see docs/switch-setup.md.")
-    for room in rooms:
-        if room.get("bridge_type") == "telegram" and wanted in (room["id"], room["name"]):
-            say(f"{room['name']} on {room.get('bridge_display_name')}", "exists")
-            return room["id"]
-    raise Stop(
-        f"No Telegram room {wanted!r}. Add the bot to the Telegram group {wanted}, make it an "
-        "admin, and post one message there so Switch creates the room. Then run this again."
-    )
-
-
-def ensure_eng_room(
-    gw: Gateway, bridges: list[dict], rooms: list[dict], layout: Layout, slack: str | None
+def ensure_room(
+    gw: Gateway, key: str, wanted: str, bridge: dict, rooms: list[dict], members: dict[str, str]
 ) -> str:
-    name = layout.room_names["eng"]
+    """The room named (or with the id) `wanted` on this connection; created from TEMPLATES[key]
+    if missing and Switch can create chats there. `members` is role -> agent name for the template.
+
+    The lookup checks the connection as well as the name, so one server can hold bugline-eng on
+    Slack and bugline-eng on Mattermost side by side.
+    """
+    where = bridge["display_name"]
     for room in rooms:
-        if room["name"] == name:
-            say(name, "exists")
+        if room.get("bridge_id") == bridge["bridge_id"] and wanted in (room["id"], room["name"]):
+            say(f"{room['name']} on {where}", "exists")
             return room["id"]
-    bridge = pick_slack(bridges, slack)
-    names = {spec.role: spec.name for spec in layout.agents}
-    inputs = {"room": name, "bridge": bridge["display_name"], **names}
-    body = {"yaml": TEMPLATE.read_text(encoding="utf-8"), "inputs": inputs, "template_name": name}
+    # Field names as GET /gateway/collaborations returns them (server 0.31). Telegram is the one
+    # chat app without channel creation: a bot cannot create a Telegram chat.
+    app = app_name(bridge["bridge_type"])
+    if not bridge.get("channel_creation_supported"):
+        raise Stop(
+            f"No room {wanted!r} on {where}, and Switch cannot create {app} chats. Add the bot to "
+            f"the {app} group {wanted}, make it an admin, and post one message there so Switch "
+            "creates the room. Then run this again."
+        )
+    if not bridge.get("channel_creation_enabled"):
+        raise Stop(
+            f"No room {wanted!r} on {where}, and that connection does not allow creating channels. "
+            "Turn on 'Allow creating channels from Switch' for it in Switch Console, then run "
+            "this again."
+        )
+    template = TEMPLATES[key]
+    inputs = {"room": wanted, "bridge": where, **members}
+    body = {
+        "yaml": template.read_text(encoding="utf-8"),
+        "inputs": inputs,
+        "template_name": wanted,
+    }
     result = gw.write("POST", "/rooms/from-yaml", body)
-    say(f"{name} on {bridge['display_name']}", gw.done("created from the template"))
+    say(f"{wanted} on {where}", gw.done("created from the template"))
     for failure in (result or {}).get("failures") or []:
         print(f"      warning: {failure}")
-    return result["room_id"] if result else f"<{name}>"
+    return result["room_id"] if result else f"<{wanted}>"
 
 
 def write_env_files(layout: Layout, api_url: str, room_ids: dict[str, str], dry_run: bool) -> None:
@@ -519,12 +551,16 @@ class Options:
     admin_email: str
     admin_password: str
     support_room: str | None
-    slack_connection: str | None
     dry_run: bool
+    # Room key -> a flag's value, or nothing to use the default: the chat app (bridge type) and
+    # the display name of the connection to use when there are several of that type.
+    bridge_types: dict[str, str | None]
+    connections: dict[str, str | None]
 
 
 def run(gw: Gateway, layout: Layout, opts: Options) -> None:
     names = layout.room_names
+    kinds = {key: opts.bridge_types.get(key) or kind for key, kind in layout.bridge_types.items()}
     print("1. Server")
     gw.check_health()
     gw.login(opts.admin_email, opts.admin_password)
@@ -532,26 +568,29 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
 
     print("2. Registration key")
     needed = any(not spec.credentials.is_file() for spec in layout.agents)
-    key = registration_key(gw, layout, needed)
+    reg_key = registration_key(gw, layout, needed)
 
     print("3. Agents")
-    agent_ids = register_agents(gw, layout, key)
+    agent_ids = register_agents(gw, layout, reg_key)
 
     print("4-5. Rooms")
     bridges, rooms = gw.get("/collaborations"), gw.get("/rooms")
     rooms = [room for room in rooms if not room.get("archived_at")]
-    room_ids = {"support": find_support_room(bridges, rooms, opts.support_room or names["support"])}
-    room_ids["eng"] = ensure_eng_room(gw, bridges, rooms, layout, opts.slack_connection)
+    wanted = {"support": opts.support_room or names["support"], "eng": names["eng"]}
+    members = room_members(layout)
+    room_ids = {}
+    for key in ROOM_KEYS:
+        flag = f"--{key}-connection"
+        bridge = pick_bridge(bridges, kinds[key], opts.connections.get(key), flag)
+        roles = {spec.role: spec.name for spec in members[key]}
+        room_ids[key] = ensure_room(gw, key, wanted[key], bridge, rooms, roles)
 
     print("6. Agent settings files")
     write_env_files(layout, opts.api_url, room_ids, opts.dry_run)
 
     print("7. Agents in rooms")
-    frontdesk = layout.agents[0]
-    ensure_members(
-        gw, names["support"], room_ids["support"], {frontdesk.name: agent_ids[frontdesk.name]}
-    )
-    ensure_members(gw, names["eng"], room_ids["eng"], agent_ids)
+    for key, specs in members.items():
+        ensure_members(gw, names[key], room_ids[key], {s.name: agent_ids[s.name] for s in specs})
 
     print("8. Access rules")
     ensure_access_rules(gw, layout, agent_ids, room_ids["eng"])
@@ -561,6 +600,7 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
         ensure_instructions(gw, names[key], room_id, INSTRUCTIONS[key])
     for link in LINKS:
         ensure_link(gw, names, room_ids, link)
+    frontdesk = layout.agents[0]
     creds = load_credentials(frontdesk.credentials) if frontdesk.credentials.is_file() else None
     for key, room_id in room_ids.items():
         ensure_alias(gw, creds, frontdesk.name, names[key], room_id)
@@ -569,9 +609,8 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
     ensure_kit(gw, names, room_ids)
 
     print("11. Still by hand")
-    print(
-        f"  - Type `!follow-ups off` in {names['support']} (Telegram) and {names['eng']} (Slack)."
-    )
+    support, eng = (f"{names[key]} ({app_name(kinds[key])})" for key in ROOM_KEYS)
+    print(f"  - Type `!follow-ups off` in {support} and {eng}.")
     print("  - Start the three agents, each in its own terminal (README, 'Reproduce it', part B):")
     print("      cd agents\\frontdesk; .\\.venv\\Scripts\\python agent.py")
     print(
@@ -594,17 +633,46 @@ def read_options(args: argparse.Namespace) -> Options:
     password = os.environ.get("SWITCH_ADMIN_PASSWORD") or console_env.get("GATEWAY_ADMIN_PASSWORD")
     if not (email and password):
         raise Stop("No admin login: set SWITCH_ADMIN_EMAIL and SWITCH_ADMIN_PASSWORD.")
+    return flag_options(args, api_url.rstrip("/"), email, password)
+
+
+def flag_options(args: argparse.Namespace, api_url: str, email: str, password: str) -> Options:
+    """Options from the command-line flags. A flag that was not given is None, which means the
+    default; scripts/doctor.py passes a namespace where every flag is None."""
     return Options(
-        api_url.rstrip("/"), email, password, args.support_room, args.slack_connection, args.dry_run
+        api_url,
+        email,
+        password,
+        args.support_room,
+        bool(args.dry_run),
+        bridge_types={key: getattr(args, f"{key}_bridge") for key in ROOM_KEYS},
+        connections={key: getattr(args, f"{key}_connection") for key in ROOM_KEYS},
     )
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="read, but change nothing")
-    parser.add_argument("--support-room", help="name or id of the Telegram room (bugline-support)")
-    parser.add_argument("--slack-connection", help="display name of the Slack connection to use")
-    args = parser.parse_args()
+    parser.add_argument("--support-room", help="name or id of the support room (bugline-support)")
+    # No defaults shown: they are BRIDGE_TYPES in agents/frontdesk/config.py, which main() loads
+    # only after read_options.
+    for key in ROOM_KEYS:
+        parser.add_argument(
+            f"--{key}-bridge", help=f"chat app of the {key} room: telegram, slack, mattermost, ..."
+        )
+        parser.add_argument(
+            f"--{key}-connection",
+            help=f"display name of the {key} room's connection, if that app has several",
+        )
+    # The old name, from when bugline-eng could only be on Slack.
+    parser.add_argument(
+        "--slack-connection", dest="eng_connection", deprecated=True, help="use --eng-connection"
+    )
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
     try:
         # Options first: loading the agents' config modules reads their .env files into the
         # environment, and a stale SWITCH_API_URL there must not win over ports.json.
