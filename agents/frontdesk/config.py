@@ -8,6 +8,15 @@ import os
 import re
 from pathlib import Path
 
+# Shared with the coder agents. Re-exported so the front desk keeps reading them as config.NAME.
+from common.conventions import (  # noqa: F401
+    REPLY_MAX_LINES,
+    TICKET_ID_RE,
+    TICKET_PREFIX,
+    format_ticket_id,
+)
+from common.env import load_env_file, require_env
+
 AGENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = AGENT_DIR.parent.parent
 
@@ -18,28 +27,7 @@ def _path_from_env(var: str, default: Path) -> Path:
     return AGENT_DIR / value if value else default
 
 
-def _load_env_file(path: Path) -> None:
-    """Read KEY=VALUE lines from `path` into the environment, for runs outside Docker.
-
-    Variables that are already set win, so the shell and Docker's env_file override the file.
-    """
-    if not path.is_file():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        key, sep, value = line.strip().partition("=")
-        if sep and key and not key.startswith("#"):
-            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
-
-
-_load_env_file(AGENT_DIR / ".env")
-
-
-def require_env(name: str) -> str:
-    """Value of env var `name`. Raises if it is not set, so the failure is obvious at start."""
-    value = os.environ.get(name)
-    if not value:
-        raise RuntimeError(f"{name} is not set; see agents/frontdesk/.env.example")
-    return value
+load_env_file(AGENT_DIR / ".env")
 
 
 # --- Gemini (CLAUDE.md section 6) ---------------------------------------------------------------
@@ -52,7 +40,6 @@ DUPLICATE_MIN_CONFIDENCE = 0.7  # below this a duplicate match counts as no matc
 BACKOFF_START_S = 2.0  # first wait after an HTTP 429, doubled on each retry
 BACKOFF_CAP_S = 30.0
 BACKOFF_TRIES = 5  # total attempts, including the first
-REPLY_MAX_LINES = 10
 
 
 def gemini_api_key() -> str:
@@ -61,19 +48,11 @@ def gemini_api_key() -> str:
 
 
 # --- Tickets and rate guards (CLAUDE.md section 2) ----------------------------------------------
-TICKET_PREFIX = "BL"
 MAX_OPEN_TICKETS = 5  # per reporter
 REPLIES_PER_MINUTE = 3  # model-backed replies per user
 REPLY_WINDOW_S = 60.0
 
-
-def format_ticket_id(n: int) -> str:
-    """Ticket number to its public id: 1 -> "BL-1"."""
-    return f"{TICKET_PREFIX}-{n}"
-
-
-# A close message in the eng room carries a ticket id and a GitHub PR link.
-TICKET_ID_RE = re.compile(rf"\b{TICKET_PREFIX}-(\d+)\b")
+# A close message in the eng room carries a ticket id (TICKET_ID_RE) and a GitHub PR link.
 PR_URL_RE = re.compile(r"https://github\.com/[^\s]+/pull/\d+")
 
 
@@ -98,10 +77,6 @@ REPRODUCER_ROLE = "reproducer"
 REPRODUCER_NAME = os.environ.get("FRONTDESK_REPRODUCER_NAME", "")
 # send_targeted_message statuses that mean the target will see the message.
 REACHABLE_STATUSES = frozenset({"live", "awaiting_manual_poll"})
-
-RECONNECT_START_S = 1.0  # WebSocket reconnect backoff, doubled up to the cap
-RECONNECT_CAP_S = 30.0
-HTTP_TIMEOUT_S = 30.0
 
 
 def switch_api_url() -> str:

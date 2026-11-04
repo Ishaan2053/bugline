@@ -4,11 +4,11 @@ import asyncio
 import json
 
 import httpx
+from common.switch_client import Credentials, RoomConnection, SwitchApi
 
 import config
 from agent import Poster
 from handlers import Post
-from switch_client import Credentials, RoomConnection, SwitchApi
 
 CREDS = Credentials("agent-1", "key-1")
 

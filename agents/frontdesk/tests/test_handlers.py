@@ -3,13 +3,13 @@
 from collections.abc import Sequence
 
 import pytest
+from common.switch_client import IncomingMessage
 
 import config
 import messages
 from classify import Classification, RateLimited, Report
 from handlers import Post, handle
 from store import Draft, Store, Ticket
-from switch_client import IncomingMessage
 
 PR = "https://github.com/Ishaan2053/bugline/pull/7"
 COMPLETE = Report(
