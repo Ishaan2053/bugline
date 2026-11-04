@@ -16,6 +16,7 @@ What goes where:
 | Telegram connection, `bugline-support` room | By hand: the bot joins the Telegram group (part A) |
 | Slack connection, your linked accounts | By hand in Console (part A) |
 | Registration key, the three agents, `bugline-eng` and its Slack channel, roles, the `bugline-repo` reference, agents in rooms, access rules, room instructions, links, `@frontdesk` aliases, `bugline-kit`, the room ids in both `.env` files | `scripts/bootstrap.py` (part B) |
+| `bugline-support` on a chat app where Switch can create channels (not Telegram) | `scripts/bootstrap.py`, from `switch/bugline-support.template.yaml` ([other chat apps](#other-chat-apps)) |
 | `!follow-ups off` in both rooms, starting the agents | By hand (part C) |
 
 > **Never disconnect a messaging app in Switch.** Disconnecting deletes every Switch room on that
@@ -87,6 +88,20 @@ git clone https://github.com/Ishaan2053/bugline.git C:\bugline-agents\bugline-fi
 # in each clone's demo-app\: py -3.14 -m venv .venv; .\.venv\Scripts\pip install -r requirements-dev.txt
 ```
 
+```bash
+cd agents/frontdesk
+python3.14 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env   # set GEMINI_API_KEY; bootstrap fills in the Switch values
+cd ../coder
+python3.14 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cd ../..
+git clone https://github.com/Ishaan2053/bugline.git ~/bugline-agents/bugline-repro/bugline
+git clone https://github.com/Ishaan2053/bugline.git ~/bugline-agents/bugline-fixer/bugline
+# in each clone's demo-app/: python3.14 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+```
+
 More on each agent's settings: [agents/frontdesk/README.md](../agents/frontdesk/README.md),
 [agents/coder/README.md](../agents/coder/README.md).
 
@@ -97,6 +112,11 @@ From the repo root:
 ```powershell
 agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --dry-run
 agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py
+```
+
+```bash
+agents/frontdesk/.venv/bin/python scripts/bootstrap.py --dry-run
+agents/frontdesk/.venv/bin/python scripts/bootstrap.py
 ```
 
 `--dry-run` logs in and reads, and prints every write instead of sending it. The real run prints
@@ -110,8 +130,12 @@ docstring. In short:
 3. Registers `bugline-frontdesk`, `bugline-repro` and `bugline-fixer` if their
    `credentials.json` is missing.
 4. Finds `bugline-support` on the Telegram connection. If it is not there, it stops and tells you
-   to add the bot to the group and post once.
-5. Makes `bugline-eng` on the Slack connection from `switch/bugline.template.yaml`.
+   to add the bot to the group and post once. (On a chat app where Switch can create channels, it
+   makes the room from `switch/bugline-support.template.yaml` instead; see
+   [other chat apps](#other-chat-apps).)
+5. Makes `bugline-eng` on the Slack connection from `switch/bugline.template.yaml`. A room is
+   matched by its name and its connection, so `bugline-eng` on Slack and `bugline-eng` on
+   Mattermost can sit side by side on one server.
 6. Writes `SWITCH_API_URL` and the room ids into `agents/frontdesk/.env` and `agents/coder/.env`.
 7. Puts the front desk in both rooms and the coders in `bugline-eng`.
 8. Access rules: the front desk open to anyone (Telegram users have no Switch account), the
@@ -123,10 +147,37 @@ docstring. In short:
     changes), the `bugline-repo` reference, attached to both rooms.
 
 On a team server, set `SWITCH_API_URL`, `SWITCH_ADMIN_EMAIL` and `SWITCH_ADMIN_PASSWORD` first.
-If you have two Slack connections, pass `--slack-connection "<name>"`; if the Telegram room has
-another name, pass `--support-room <name or id>`.
+If you have two connections of one chat app, pass `--support-connection "<name>"` or
+`--eng-connection "<name>"` (`--slack-connection` still works for the eng room); if the support
+room has another name, pass `--support-room <name or id>`.
 
 A link tells agents the other room exists. It does not let anyone into it.
+
+### Other chat apps
+
+Each room can be on any chat app Switch connects. `--support-bridge` and `--eng-bridge` take the
+app as Switch names it (`bridge_type` in `GET /gateway/collaborations`); the defaults are
+`telegram` and `slack`, from `BRIDGE_TYPES` in `agents/frontdesk/config.py`, and
+`BUGLINE_SUPPORT_BRIDGE` / `BUGLINE_ENG_BRIDGE` in `agents/frontdesk/.env` change them. Bootstrap
+reads `channel_creation_supported` and `channel_creation_enabled` on the connection: where both
+are true it makes a missing room from its template; where they are not, it stops and says what to
+do. The flags are not saved, so a later run without them goes back to the defaults and rewrites
+the room ids in both `.env` files. The fixer's access rule names the eng room bootstrap picked,
+so it follows too.
+
+- **Telegram.** Switch cannot create Telegram chats (`channel_creation_supported` is false). The
+  room appears when the bot joins the group and someone posts (step 2). This is the author's
+  support room.
+- **Slack.** Switch makes the channel, if **Allow creating channels from Switch** is on for the
+  connection (step 3). This is the author's eng room.
+- **Mattermost.** Switch Console starts a Mattermost server with its local server (in Docker) and
+  connects it as `Mattermost`; on the author's server it was `active`, with channel creation on.
+  It is at `http://localhost:<port>`, the port being `mattermost` in Console's `ports.json`.
+  `--support-bridge mattermost --eng-bridge mattermost` makes both rooms there and needs no
+  Telegram or Slack account; see the README's Mattermost variant. Checked with unit tests and a
+  dry run only; no real run.
+- **Discord, Microsoft Teams.** Switch can create channels on both, so the same flags should work
+  (`--support-bridge <type>`, with the type as `GET /gateway/collaborations` shows it). Untested.
 
 ## Part C: start the agents
 
@@ -138,6 +189,12 @@ One terminal each, from the repo root:
 cd agents\frontdesk; .\.venv\Scripts\python agent.py
 cd agents\coder; $env:CODER_ROLE = "reproducer"; .\.venv\Scripts\python agent.py
 cd agents\coder; $env:CODER_ROLE = "fixer"; .\.venv\Scripts\python agent.py
+```
+
+```bash
+cd agents/frontdesk && .venv/bin/python agent.py
+cd agents/coder && CODER_ROLE=reproducer .venv/bin/python agent.py
+cd agents/coder && CODER_ROLE=fixer .venv/bin/python agent.py
 ```
 
 Each coder logs `holding the role reproducer` (or `fixer`), and Switch posts "assumed the
@@ -289,6 +346,8 @@ Expect a PR, then "BL-2 is fixed" in `bugline-support` for both the reporter and
   if you narrow it, test a real ticket again.
 - **Bootstrap stops at the Telegram room.** The room appears only after the bot is in the group and
   someone has posted there. If the group has another name, pass `--support-room`.
+- **Bootstrap says a connection does not allow creating channels.** Turn on **Allow creating
+  channels from Switch** for that connection in Console. Never disconnect it to change a setting.
 - **Bootstrap says credentials are missing for a registered agent.** The server shows an agent's
   API key once, at registration. Restore `credentials.json` from where you ran it first, or delete
   the agent in Console and run bootstrap again.

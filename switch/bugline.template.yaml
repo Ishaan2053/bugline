@@ -16,8 +16,9 @@
 # the room names them and the server stops if a name is unknown.
 #
 # What this template cannot do, and what bootstrap.py does instead:
-# - The Telegram room bugline-support. Telegram bots cannot create chats, so
-#   that room appears when the bot is added to the group.
+# - The room bugline-support. switch/bugline-support.template.yaml makes it
+#   where Switch can create chats; on Telegram, the default, it appears when
+#   the bot is added to the group, because Telegram bots cannot create chats.
 # - The links between the two rooms. Template `links:` only join rooms made by
 #   the same template.
 # - Access rules beyond the presets. The fixer's rule ("the owner only, in
@@ -59,8 +60,8 @@ params:
   bridge:
     type: bridge
     description: >-
-      The Slack connection. The room and its Slack channel are created there.
-      Do not pick Telegram; it cannot create chats.
+      The connection the room and its channel are created on (Slack by
+      default). Not Telegram; it cannot create chats.
     required: true
 
 room:

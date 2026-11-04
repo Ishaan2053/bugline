@@ -31,6 +31,7 @@ from bootstrap import (
     load_agent_configs,
     load_layout,
     read_options,
+    room_members,
 )
 from common.env import read_env_file
 from common.switch_client import Credentials, load_credentials
@@ -62,11 +63,6 @@ def configured_room_ids(layout: Layout) -> dict[str, str]:
     """Room key -> the room id in the front desk's .env ("" if unset): the rooms the agents use."""
     env = read_env_file(layout.frontdesk_env)
     return {key: env.get(var, "") for key, var in layout.frontdesk_room_vars.items()}
-
-
-def room_members(layout: Layout) -> dict[str, tuple[AgentSpec, ...]]:
-    """Who belongs in each room, as bootstrap puts them: the front desk in both, coders in eng."""
-    return {"support": layout.agents[:1], "eng": layout.agents}
 
 
 # --- Switch -----------------------------------------------------------------------------------

@@ -8,9 +8,8 @@ import httpx
 import pytest
 from test_bootstrap import AGENT_IDS, FakeSwitch, make_layout
 
+import bootstrap
 import doctor
-
-BRIDGE_IDS = {"telegram": "b-tg", "slack": "b-sl"}  # as FakeSwitch lists the connections
 
 
 class RunningSwitch(FakeSwitch):
@@ -28,9 +27,6 @@ class RunningSwitch(FakeSwitch):
         if path == "/gateway/collaborations":
             for bridge in body:
                 bridge["status"] = "active"
-        elif path == "/gateway/rooms":
-            for room in body:
-                room["bridge_id"] = BRIDGE_IDS[room["bridge_type"]]
         elif path.startswith("/gateway/rooms/") and "agent_ids" in body:
             status = "live" if self.live else "offline"
             body["agent_statuses"] = {agent_id: status for agent_id in body["agent_ids"]}
@@ -86,6 +82,14 @@ def test_connected_agents(tmp_path: Path) -> None:
         fake = RunningSwitch(live=live)
         gw = doctor.Gateway("http://switch", True, httpx.MockTransport(fake.handle))
         assert doctor.connected_agents(gw, layout) == expected
+
+
+def test_bootstrap_options_from_doctor_use_the_defaults() -> None:
+    """doctor reads bootstrap's options with no flags; each flag must come back as the default."""
+    opts = bootstrap.flag_options(doctor.NoFlags(), "http://switch", "a", "pw")
+    assert opts.bridge_types == {"support": None, "eng": None}
+    assert opts.connections == {"support": None, "eng": None}
+    assert opts.dry_run is False
 
 
 def test_local_checks_find_a_missing_clone(tmp_path: Path) -> None:

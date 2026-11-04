@@ -1,0 +1,49 @@
+# Bugline: the support room, where users report bugs to the front desk.
+#
+# scripts/bootstrap.py sends this file to the server (POST /gateway/rooms/from-yaml)
+# when bugline-support is missing and its chat app lets Switch create channels
+# (Mattermost, Slack, Discord, Teams). On Telegram, the default, it is not used:
+# a bot cannot create a Telegram chat, so that room appears when the bot joins
+# the bugline-support group.
+#
+# It follows bugline.template.yaml, which makes bugline-eng; the notes there
+# say what a template cannot do and what bootstrap.py does instead (links,
+# access rules, the full room instructions, bugline-kit).
+version: 1
+
+params:
+  room:
+    type: string
+    description: Name of the support room.
+    default: bugline-support
+    pattern: "[a-z][a-z0-9-]*"
+  frontdesk:
+    type: string
+    description: Name of the registered front desk agent (agents/frontdesk).
+    default: bugline-frontdesk
+    input: advanced
+  bridge:
+    type: bridge
+    description: >-
+      The connection the room and its channel are created on. Not Telegram;
+      it cannot create chats.
+    required: true
+
+room:
+  name: "{room}"
+  description: Users report bugs and ask questions; the front desk answers or hands bugs to bugline-eng
+  # Replaced by switch/room-instructions-support.md when bootstrap.py runs.
+  instructions: |
+    Room rules: switch/room-instructions-support.md in the Bugline repo.
+  bridge: "{bridge}"
+  channel_type: channel_public
+  agents: ["{frontdesk}"]
+  users: ["{$creator}"]
+  # The same alias the front desk has in bugline-eng.
+  aliases:
+    "{frontdesk}": frontdesk
+
+# Posted once. It names no agent, so the front desk does not answer it.
+kickoff: |
+  This room is set up. Type `!follow-ups off` here. To report a bug or ask a
+  question, start your message with @frontdesk.
