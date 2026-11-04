@@ -52,9 +52,9 @@ program. The brief is the second line of defence. The code adds no third one.
 | `SWITCH_ENG_ROOM_ID` | required | Room id of `bugline-eng` |
 | `FRONTDESK_AGENT_NAME` | none; bootstrap writes it | Where the reproducer sends its verdict. Unset: the verdict is posted plainly and reaches the front desk through `@frontdesk` |
 | `CODER_ROLE` | required | `reproducer` or `fixer`; set it per shell |
-| `CODER_AGENT_NAME` | `bugline-repro` / `bugline-fixer` | Switch agent name |
-| `CODER_BRIEF` | `switch/agent-briefs/<role>.md` | Brief, read at every run |
-| `CODER_WORKDIR` | `C:\bugline-agents\<agent name>`; `~/bugline-agents/<agent name>` off Windows | Holds the clone `bugline`, where Claude Code runs |
+| `CODER_AGENT_NAME` | `[agents]` in `bugline.toml` (`bugline-repro` / `bugline-fixer`) | Switch agent name |
+| `CODER_BRIEF` | `switch/agent-briefs/<role>.md` | Brief. At start it is filled with the names in `bugline.toml`, followed by the role's documents from `switch/docs/`, and written to `state/<agent name>/brief.md`, which every run reads |
+| `CODER_WORKDIR` | `C:\bugline-agents\<agent name>`; `~/bugline-agents/<agent name>` off Windows | Holds the clone (`clone_dir` in `bugline.toml`, `bugline` by default), where Claude Code runs |
 | `CODER_CLAUDE_BIN` | `claude` | Path to the Claude Code CLI |
 | `CODER_TIMEOUT_S` | `1800` | Seconds before a run is stopped |
 | `CODER_STATE_DIR` | `state` | Holds `<agent name>/credentials.json` and `connections.json` |
@@ -117,7 +117,7 @@ Each run is:
 
 ```
 claude -p --output-format json --no-session-persistence
-  --append-system-prompt-file <brief>
+  --append-system-prompt-file state/<agent name>/brief.md
   --setting-sources project,local --settings {"attribution": {"commit": "", "pr": ""}}
   --permission-mode dontAsk --tools Read,Glob,Grep,Edit,Write,Bash
   --allowedTools <the role's list> --disallowedTools <the deny list>
@@ -135,10 +135,12 @@ with the prompt on stdin, in `<workdir>\bugline`. The lists are in `config.py`.
   (`cd demo-app && ... | tail -3; mkdir -p scratch`), and in `dontAsk` mode every part of a chain
   must be allowed. A list of single commands refused nearly every real step in the first live
   run, so the deny lists below keep each agent in its lane instead.
-- The reproducer may write only under `demo-app/scratch/`, and is refused `git commit`,
-  `git push`, `git merge`, `git rebase` and every `gh` command. The fixer may edit the clone.
-- Denied for both: force-push, pushing `main`, deleting branches, `git reset --hard`,
-  `gh pr merge`, and editing `seed.py` or any `.db` file.
+- The reproducer may write only under `scratch_dir` (`demo-app/scratch/` by default), and is
+  refused `git commit`, `git push`, `git merge`, `git rebase` and every `gh` command. The fixer
+  may edit the clone.
+- Denied for both: force-push, pushing `default_branch` (`main`), deleting branches,
+  `git reset --hard`, `gh pr merge`, and editing `protected_paths` (`seed.py` and any `.db` file
+  by default). The paths and the branch come from `bugline.toml`.
 - No AI attribution is added to commits or PR bodies (`--settings`), as `fix-policy.md` asks.
 
 These rules narrow what Claude Code does by mistake. They are not a sandbox: `python` can run any

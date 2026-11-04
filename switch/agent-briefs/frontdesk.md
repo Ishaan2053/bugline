@@ -3,6 +3,8 @@
 The front desk is a Python program, not a coding agent, so there is nothing to paste into Switch
 Console. This brief is the behaviour the code in `agents/frontdesk/` implements, and what people
 and the other agents can expect from it. If the code and this brief disagree, one of them is a bug.
+The names below are the shipped defaults; the code takes them, the user guide and the report
+fields from `bugline.toml`.
 
 ## Identity
 

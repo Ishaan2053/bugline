@@ -15,14 +15,14 @@ services:
     profiles: [agents]
     env_file: agents/frontdesk/.env
     environment:
-      # Reference docs the prompts read, mounted read-only below.
-      FRONTDESK_INTAKE_RULES: /refs/switch-docs/intake-rules.md
-      FRONTDESK_USER_FAQ: /refs/demo-app-README.md
+      # The repo is mounted read-only at /repo. bugline.toml names the project, and its
+      # user_guide is read relative to it; the intake rules are Bugline's own.
+      BUGLINE_CONFIG: /repo/bugline.toml
+      FRONTDESK_INTAKE_RULES: /repo/switch/docs/intake-rules.md
       FRONTDESK_CALLS_LOG: state/calls.log
     volumes:
       - frontdesk-state:/app/frontdesk/state
-      - ./switch/docs:/refs/switch-docs:ro
-      - ./demo-app/README.md:/refs/demo-app-README.md:ro
+      - .:/repo:ro
     # Lets SWITCH_API_URL=http://host.docker.internal:<port> reach a Switch server on this machine.
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -54,7 +54,9 @@ params:
     input: advanced
   repo_url:
     type: string
-    description: The GitHub repo the agents read and fix. Change it if you forked Bugline.
+    description: >-
+      The GitHub repo the agents read and fix. bootstrap.py passes repo_url
+      from bugline.toml; change it here only for an import by hand.
     default: https://github.com/Ishaan2053/bugline
     input: advanced
   bridge:
