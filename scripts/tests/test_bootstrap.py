@@ -34,7 +34,7 @@ BRIDGES = {
 
 
 def doc_text(name: str) -> str:
-    return (bootstrap.REPO_ROOT / "switch" / "docs" / name).read_text(encoding="utf-8")
+    return bootstrap.render_doc(bootstrap.REPO_ROOT / "switch" / "docs" / name)
 
 
 class FakeSwitch:
@@ -52,6 +52,7 @@ class FakeSwitch:
     ) -> None:
         self.finished = finished
         self.bridges = [dict(BRIDGES[kind]) for kind in bridges]
+        self.kinds = bridges[:2]  # the chat apps of bugline-support and bugline-eng
         self.requests: list[tuple[str, str]] = []
         self.templates: list[dict] = []  # the bodies of POST /gateway/rooms/from-yaml
         self.registered = dict(AGENT_IDS) if finished else {}
@@ -114,7 +115,8 @@ class FakeSwitch:
             ("eng", ENG, list(AGENT_IDS.values())),
         ):
             if path == f"/gateway/rooms/{room_id}":
-                text = bootstrap.INSTRUCTIONS[key].read_text(encoding="utf-8") if done else "old"
+                kinds = {"support": self.kinds[0], "eng": self.kinds[-1]}
+                text = bootstrap.instructions_text(key, kinds) if done else "old"
                 return {"agent_ids": members if done else [], "instructions": text}
         links = {SUPPORT: (ENG, "escalates to"), ENG: (SUPPORT, "supports")}
         for room_id, (target, label) in links.items():
@@ -219,7 +221,12 @@ def test_empty_server_is_set_up(tmp_path: Path, capsys: pytest.CaptureFixture) -
     # Only bugline-eng comes from a template; the Telegram room was adopted from the group.
     [eng] = fake.templates
     assert eng["yaml"] == bootstrap.TEMPLATES["eng"].read_text(encoding="utf-8")
-    assert eng["inputs"] == {"room": "bugline-eng", "bridge": "Bugline Slack", **ROLES_BY_NAME}
+    assert eng["inputs"] == {
+        "room": "bugline-eng",
+        "bridge": "Bugline Slack",
+        **ROLES_BY_NAME,
+        "repo_url": "https://github.com/Ishaan2053/bugline",  # the reference, from bugline.toml
+    }
     assert "SWITCH_REGISTRATION_KEY=reg-secret" in layout.frontdesk_env.read_text()
     # The verify hand-off: only the reproducer's Verified closes; verdicts go to the front desk.
     assert "SWITCH_REPRODUCER_AGENT_ID=a-repro" in layout.frontdesk_env.read_text()
@@ -327,3 +334,12 @@ def test_set_env_values_changes_only_what_differs(tmp_path: Path) -> None:
     assert bootstrap.set_env_values(path, {"A": "1"}, dry_run=False) == "exists"
     assert bootstrap.set_env_values(path, {"B": "3", "C": "4"}, dry_run=False) == "updated (B, C)"
     assert path.read_text() == "# comment\nA=1\nB=3\nC=4\n"
+
+
+def test_room_texts_are_rendered_for_the_project_and_the_chat_apps() -> None:
+    apps = {"support": "mattermost", "eng": "mattermost"}
+    eng = bootstrap.instructions_text("eng", apps)
+    assert "Reports come from\n`bugline-support` on Mattermost through the front desk." in eng
+    assert "Users (people on Mattermost)" in bootstrap.instructions_text("support", apps)
+    for text in [eng, *(doc_text(name) for name in bootstrap.KIT_DOCS)]:
+        assert "$" not in text  # every placeholder was filled

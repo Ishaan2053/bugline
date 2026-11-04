@@ -4,12 +4,15 @@ The front desk makes ticket ids and closes tickets; the coder agents read ticket
 ticket they are busy with, and hand work to each other with the lines below. Both import them from
 here, so the fixer's verify request and the reproducer's verdict are parsed the same way by the
 agent that sends them and the agent that reads them (switch/docs/fix-policy.md and
-switch/docs/repro-checklist.md give the exact wording).
+switch/docs/repro-checklist.md give the exact wording). The ticket prefix comes from bugline.toml,
+so every pattern here follows the configured project.
 """
 
 import re
 
-TICKET_PREFIX = "BL"
+from common.project import load_project
+
+TICKET_PREFIX = load_project().ticket_prefix  # "BL" in the shipped bugline.toml
 # A ticket id anywhere in a message, with its number as group 1.
 TICKET_ID_RE = re.compile(rf"\b{TICKET_PREFIX}-(\d+)\b")
 # The eng room's rule (switch/room-instructions-eng.md): replies stay under 10 lines.
@@ -40,7 +43,7 @@ VERDICT_RE = re.compile(
 
 
 def format_ticket_id(n: int) -> str:
-    """Ticket number to its public id: 1 -> "BL-1"."""
+    """Ticket number to its public id: 1 -> "BL-1" with the shipped prefix."""
     return f"{TICKET_PREFIX}-{n}"
 
 

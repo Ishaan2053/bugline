@@ -38,6 +38,7 @@ so they are defined once.
 """
 
 import argparse
+import functools
 import importlib.util
 import json
 import os
@@ -54,15 +55,22 @@ AGENTS_DIR = REPO_ROOT / "agents"
 sys.path.insert(0, str(AGENTS_DIR))  # so `common` imports, as it does for the agents
 
 from common.env import read_env_file  # noqa: E402
+from common.project import load_project  # noqa: E402
 from common.switch_client import Credentials, OpError, load_credentials, register  # noqa: E402
 
+# The project the agents work on (bugline.toml). Names reach bootstrap through Layout, from the
+# agents' config modules; this is for the repo URL, the app's paths and rendering switch/ files.
+PROJECT = load_project()
 ROOM_KEYS = ("support", "eng")  # the keys of the front desk's ROOM_NAMES, in setup order
 # The template that creates each room where Switch can create chats.
 TEMPLATES = {
     "support": REPO_ROOT / "switch" / "bugline-support.template.yaml",
     "eng": REPO_ROOT / "switch" / "bugline.template.yaml",
 }
-APP_DIR = "demo-app"  # in the repo and in each coder's clone: the app, its tests and its venv
+# Template inputs beyond the room, the bridge and the agents. Each template gets only the params
+# it declares: the eng template's reference points at the project's repo.
+TEMPLATE_INPUTS = {"support": {}, "eng": {"repo_url": PROJECT.repo_web}}
+APP_DIR = PROJECT.app_dir  # in each coder's clone: the app, its tests and its venv
 INSTRUCTIONS = {key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for key in ROOM_KEYS}
 LINKS = [("support", "eng", "escalates to"), ("eng", "support", "supports")]
 FRONTDESK_ALIAS = "frontdesk"  # both templates give this alias
@@ -72,7 +80,9 @@ KIT_DESCRIPTION = "The rules Bugline's agents work by, and the repo they work on
 KIT_INSTRUCTIONS = "The same files are in switch/docs/ in the repo; the repo copy is the source."
 # The library documents: file in switch/docs/ -> when to read it. The text is read at run time.
 KIT_DOCS = {
-    "intake-rules.md": "Read before sorting a message in bugline-support or posting a ticket.",
+    "intake-rules.md": (
+        f"Read before sorting a message in {PROJECT.rooms['support']} or posting a ticket."
+    ),
     "repro-checklist.md": "Read before reproducing a ticket.",
     "fix-policy.md": "Read before fixing an approved ticket.",
 }
@@ -177,6 +187,23 @@ def handoff_env(layout: Layout, agent_ids: dict[str, str]) -> tuple[dict[str, st
         {layout.verifier_id_var: agent_ids.get(names["reproducer"], "")},
         {layout.frontdesk_name_var: names["frontdesk"]},
     )
+
+
+@functools.cache
+def doc_values() -> dict[str, str]:
+    """The coders' working directories and clones, which the switch/ documents name."""
+    return load_agent_configs()[1].doc_values()
+
+
+def render_doc(path: Path, **extra: str) -> str:
+    """A switch/ file with the project's names filled in, as Switch should hold it."""
+    return PROJECT.render(path.read_text(encoding="utf-8"), **doc_values(), **extra)
+
+
+def instructions_text(key: str, bridge_types: dict[str, str]) -> str:
+    """A room's instructions, naming the chat app each room is on."""
+    apps = {f"{room}_app": app_name(kind) for room, kind in bridge_types.items()}
+    return render_doc(INSTRUCTIONS[key], **apps)
 
 
 def room_members(layout: Layout) -> dict[str, tuple[AgentSpec, ...]]:
@@ -398,7 +425,7 @@ def ensure_room(
             "this again."
         )
     template = TEMPLATES[key]
-    inputs = {"room": wanted, "bridge": where, **members}
+    inputs = {"room": wanted, "bridge": where, **members, **TEMPLATE_INPUTS[key]}
     body = {
         "yaml": template.read_text(encoding="utf-8"),
         "inputs": inputs,
@@ -448,7 +475,7 @@ def expected_policies(eng_id: str) -> dict[str, tuple[dict | None, str]]:
     return {
         "frontdesk": (None, "anyone"),
         "reproducer": ({"rules": [OWNER_RULE]}, "the owner and the owner's agents"),
-        "fixer": ({"rules": [fixer_rule]}, "the owner only, in bugline-eng only"),
+        "fixer": ({"rules": [fixer_rule]}, f"the owner only, in {PROJECT.rooms['eng']} only"),
     }
 
 
@@ -465,8 +492,8 @@ def ensure_access_rules(gw: Gateway, layout: Layout, ids: dict[str, str], eng_id
         say(f"{spec.name} ({label})", gw.done("updated"))
 
 
-def ensure_instructions(gw: Gateway, room: str, room_id: str, path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
+def ensure_instructions(gw: Gateway, room: str, room_id: str, path: Path, text: str) -> None:
+    """The room's instructions are `text`: `path` rendered for this project and these apps."""
     if (gw.get(f"/rooms/{room_id}") or {}).get("instructions") == text:
         say(f"{room} instructions", "exists")
         return
@@ -508,8 +535,8 @@ def ensure_alias(
 
 
 def ensure_document(gw: Gateway, existing: dict[str, dict], filename: str, when: str) -> str:
-    """One library document whose text is the repo file. Returns its id."""
-    content = (REPO_ROOT / "switch" / "docs" / filename).read_text(encoding="utf-8")
+    """One library document: the repo file, rendered for the project. Returns its id."""
+    content = render_doc(REPO_ROOT / "switch" / "docs" / filename)
     fields = {
         "name": filename,
         "description": content.splitlines()[0].lstrip("# ").strip(),
@@ -560,7 +587,10 @@ def ensure_kit(gw: Gateway, names: dict[str, str], room_ids: dict[str, str]) -> 
     if reference:
         ensure_member(gw, package_id, "references", reference["id"], REFERENCE_NAME)
     else:
-        say(f"{REFERENCE_NAME} in {KIT_NAME}", "skipped (not in bugline-eng; the template adds it)")
+        say(
+            f"{REFERENCE_NAME} in {KIT_NAME}",
+            f"skipped (not in {names['eng']}; the template adds it)",
+        )
 
     for key, room_id in room_ids.items():
         attached = {p["id"] for p in gw.get(f"/rooms/{room_id}/packages") or []}
@@ -623,7 +653,8 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
 
     print("9. Room instructions, links and aliases")
     for key, room_id in room_ids.items():
-        ensure_instructions(gw, names[key], room_id, INSTRUCTIONS[key])
+        text = instructions_text(key, kinds)
+        ensure_instructions(gw, names[key], room_id, INSTRUCTIONS[key], text)
     for link in LINKS:
         ensure_link(gw, names, room_ids, link)
     frontdesk = layout.agents[0]
@@ -679,7 +710,9 @@ def flag_options(args: argparse.Namespace, api_url: str, email: str, password: s
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="read, but change nothing")
-    parser.add_argument("--support-room", help="name or id of the support room (bugline-support)")
+    parser.add_argument(
+        "--support-room", help=f"name or id of the support room ({PROJECT.rooms['support']})"
+    )
     # No defaults shown: they are BRIDGE_TYPES in agents/frontdesk/config.py, which main() loads
     # only after read_options.
     for key in ROOM_KEYS:

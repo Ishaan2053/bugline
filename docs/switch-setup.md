@@ -157,7 +157,7 @@ A link tells agents the other room exists. It does not let anyone into it.
 
 Each room can be on any chat app Switch connects. `--support-bridge` and `--eng-bridge` take the
 app as Switch names it (`bridge_type` in `GET /gateway/collaborations`); the defaults are
-`telegram` and `slack`, from `BRIDGE_TYPES` in `agents/frontdesk/config.py`, and
+`telegram` and `slack`, from `[rooms]` in `bugline.toml`, and
 `BUGLINE_SUPPORT_BRIDGE` / `BUGLINE_ENG_BRIDGE` in `agents/frontdesk/.env` change them. Bootstrap
 reads `channel_creation_supported` and `channel_creation_enabled` on the connection: where both
 are true it makes a missing room from its template; where they are not, it stops and says what to

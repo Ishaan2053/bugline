@@ -1,9 +1,12 @@
 """Run Claude Code headless (`claude -p`) for one job, and turn its answer into a short reply.
 
-The brief in switch/agent-briefs/ is appended to Claude Code's system prompt from the file at
-every run, so it is never copied. The prompt (the message, its sender and the thread so far) goes
-in on stdin, which avoids Windows command-line quoting and length limits. Claude Code prints one
-JSON object (`--output-format json`) whose `result` is its final message; that is the reply.
+At start, `write_brief` renders the brief in switch/agent-briefs/ and the role's documents in
+switch/docs/ with the project's names from bugline.toml, into state/<agent>/brief.md. That file is
+appended to Claude Code's system prompt at every run. The documents travel with the brief because
+the repo the agent clones need not contain switch/. The prompt (the message, its sender and the
+thread so far) goes in on stdin, which avoids Windows command-line quoting and length limits.
+Claude Code prints one JSON object (`--output-format json`) whose `result` is its final message;
+that is the reply.
 """
 
 import asyncio
@@ -11,6 +14,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from common.conventions import REPLY_MAX_LINES
@@ -23,6 +27,22 @@ import config
 class ClaudeResult:
     ok: bool
     text: str  # the final answer, or why there is none
+
+
+def write_brief(settings: config.Settings) -> Path:
+    """Render the brief and the role's documents into settings.rendered_brief; return its path.
+
+    The documents follow the brief, each after a `---` line, in the order the role lists them.
+    """
+    values = config.doc_values(settings)
+    parts = [settings.brief, *settings.docs]
+    text = "\n---\n\n".join(
+        config.PROJECT.render(path.read_text(encoding="utf-8"), **values) for path in parts
+    )
+    out = settings.rendered_brief
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    return out
 
 
 def claude_command(settings: config.Settings, claude_path: str) -> list[str]:

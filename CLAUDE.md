@@ -133,8 +133,11 @@ bugline/
   AGENTS.md                 one line pointing OpenCode here
   README.md                 judge-facing; structure in section 8
   LICENSE                   MIT
+  bugline.toml              the project the agents work on: repo, paths, test command, ticket
+                            prefix, report fields, room and agent names (BUGLINE_CONFIG = another)
   demo-app/                 FastAPI app, tests, Dockerfile, docker-compose.yml, seed.py
-  agents/common/            Switch protocol client, ticket id format, .env loading (shared)
+  agents/common/            Switch protocol client, ticket id format, .env loading, project.py
+                            (reads bugline.toml, fills the $placeholders in switch/ files) (shared)
   agents/frontdesk/           agent.py, prompts/, Dockerfile, .env.example, requirements.txt
   agents/coder/             bugline-repro and bugline-fixer: one program running Claude Code
   switch/
@@ -156,6 +159,8 @@ bugline/
   a config module, or one doc) and are referenced from everywhere else. The same goes for prose:
   briefs, room instructions and README sections link to each other instead of restating. If you
   find yourself pasting a block a second time, extract it first.
+  Project names (repo, paths, test command, ticket prefix, report fields, room and agent names)
+  live in `bugline.toml`, read through `agents/common/project.py`; switch/ files use `$placeholders`.
 - **Feature branches and PRs only.** `main` is never committed to directly. Every piece of work —
   code, docs, briefs, README — starts on a branch named `feat/<area>-<short-slug>`,
   `fix/<area>-<short-slug>` or `docs/<short-slug>`, cut from the latest `main`. When the work is

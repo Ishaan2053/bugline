@@ -11,7 +11,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, make_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from string import Template
@@ -33,18 +33,20 @@ class RateLimited(Exception):
     """Gemini kept answering 429 after every retry. The caller tells the user to wait."""
 
 
-@dataclass(frozen=True)
-class Report:
-    """A bug report as the model extracted it. Unknown fields are empty strings."""
+# The report fields come from bugline.toml ([report] fields), in the order a ticket shows them.
+REPORT_FIELDS: tuple[str, ...] = config.PROJECT.field_names
+# Only these can be missing: a report without an optional field is still complete.
+REQUIRED_FIELDS: tuple[str, ...] = config.PROJECT.required_fields
 
-    title: str = ""
-    steps: str = ""
-    expected: str = ""
-    actual: str = ""
-    group_id: str = ""
-
-
-REPORT_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(Report))
+# A bug report as the model extracted it: one string per configured field, "" when unknown.
+# Built from the field names, so Report(title=..., steps=...) and asdict() work for any project.
+Report = make_dataclass(
+    "Report",
+    [(name, str, field(default="")) for name in REPORT_FIELDS],
+    frozen=True,
+    module=__name__,
+)
+Report.__doc__ = "A bug report as the model extracted it. Unknown fields are empty strings."
 
 
 @dataclass(frozen=True)
@@ -59,7 +61,7 @@ CLASSIFY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "kind": {"type": "string", "enum": list(KINDS)},
-        "missing": {"type": "array", "items": {"type": "string", "enum": list(REPORT_FIELDS)}},
+        "missing": {"type": "array", "items": {"type": "string", "enum": list(REQUIRED_FIELDS)}},
         "report": {
             "type": "object",
             "properties": {name: {"type": "string"} for name in REPORT_FIELDS},
@@ -131,7 +133,7 @@ def classify(message: str, draft: Draft | None = None) -> Classification:
     """
     prompt = _prompt(
         "classify",
-        intake_rules=_reference(config.INTAKE_RULES_PATH),
+        intake_rules=_intake_rules(),
         draft=json.dumps(asdict(draft), indent=2) if draft else "none",
         message=message,
     )
@@ -142,7 +144,7 @@ def classify(message: str, draft: Draft | None = None) -> Classification:
     report = data.get("report") or {}
     return Classification(
         kind=data["kind"],
-        missing=[name for name in data.get("missing", []) if name in REPORT_FIELDS],
+        missing=[name for name in data.get("missing", []) if name in REQUIRED_FIELDS],
         report=Report(**{name: str(report.get(name) or "") for name in REPORT_FIELDS}),
     )
 
@@ -171,7 +173,7 @@ def answer_question(question: str) -> str:
         "answer",
         max_lines=str(config.REPLY_MAX_LINES),
         user_faq=_reference(config.USER_FAQ_PATH),
-        intake_rules=_reference(config.INTAKE_RULES_PATH),
+        intake_rules=_intake_rules(),
         question=question,
     )
     text = call_model(config.MODEL_DEFAULT, prompt, purpose="answer")
@@ -181,9 +183,14 @@ def answer_question(question: str) -> str:
 
 
 def _prompt(name: str, **values: str) -> str:
-    """Load prompts/<name>.md and fill its $placeholders."""
+    """Load prompts/<name>.md and fill its $placeholders: `values`, then the project's names."""
     template = (config.PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
-    return Template(template).substitute(values)
+    return Template(template).substitute(config.PROJECT.values(), **values)
+
+
+def _intake_rules() -> str:
+    """The intake rules with the project's names and report fields filled in."""
+    return config.PROJECT.render(_reference(config.INTAKE_RULES_PATH))
 
 
 def _reference(path: Path) -> str:

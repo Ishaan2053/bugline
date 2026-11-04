@@ -32,6 +32,7 @@ import httpx
 
 from bootstrap import (
     APP_DIR,
+    PROJECT,
     REPO_ROOT,
     Gateway,
     Stop,
@@ -42,7 +43,7 @@ from bootstrap import (
 from common.conventions import TICKET_ID_RE
 from doctor import NoFlags, connected_agents
 
-MAIN = "main"
+MAIN = PROJECT.default_branch
 TICKET_BRANCH_RE = re.compile(TICKET_ID_RE.pattern, re.IGNORECASE)  # branches are lower case
 DEMO_APP_SERVICE = "demo-app"  # the service in docker-compose.yml
 DEMO_APP_HEALTH = "http://127.0.0.1:8000/health"  # the port docker-compose.yml publishes
@@ -102,7 +103,7 @@ def reset_clone(shell: Shell, clone: Path) -> None:
         if TICKET_BRANCH_RE.search(branch):
             shell.change(["git", "branch", "-D", branch], clone)
     app = clone / APP_DIR
-    scratch = app / "scratch"
+    scratch = clone / PROJECT.scratch_dir
     if scratch.exists():
         shell.remove(scratch)
     for db in sorted(app.rglob("*.db")):

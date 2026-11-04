@@ -1,5 +1,4 @@
-You check whether a new bug report for an expense-splitter app is already tracked by an open
-ticket.
+You check whether a new bug report for $product is already tracked by an open ticket.
 
 It is the same problem when the same feature fails in the same way. Different users, groups,
 amounts or wording do not make it a different problem. A different feature, or a different
