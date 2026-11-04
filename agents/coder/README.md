@@ -48,7 +48,7 @@ program. The brief is the second line of defence. The code adds no third one.
 | `CODER_ROLE` | required | `reproducer` or `fixer`; set it per shell |
 | `CODER_AGENT_NAME` | `bugline-repro` / `bugline-fixer` | Switch agent name |
 | `CODER_BRIEF` | `switch/agent-briefs/<role>.md` | Brief, read at every run |
-| `CODER_WORKDIR` | `C:\bugline-agents\<agent name>` | Holds the clone `bugline\`, where Claude Code runs |
+| `CODER_WORKDIR` | `C:\bugline-agents\<agent name>`; `~/bugline-agents/<agent name>` off Windows | Holds the clone `bugline`, where Claude Code runs |
 | `CODER_CLAUDE_BIN` | `claude` | Path to the Claude Code CLI |
 | `CODER_TIMEOUT_S` | `1800` | Seconds before a run is stopped |
 | `CODER_STATE_DIR` | `state` | Holds `<agent name>/credentials.json` and `connections.json` |
@@ -92,6 +92,10 @@ $env:CODER_ROLE = "fixer"; python agent.py
 Bash:
 
 ```bash
+git clone https://github.com/Ishaan2053/bugline.git ~/bugline-agents/bugline-repro/bugline
+git clone https://github.com/Ishaan2053/bugline.git ~/bugline-agents/bugline-fixer/bugline
+# in each clone's demo-app/: python3.14 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 python ../../scripts/bootstrap.py   # or CODER_ROLE=reproducer|fixer python agent.py --register

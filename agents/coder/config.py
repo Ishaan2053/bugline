@@ -6,6 +6,7 @@ tool permissions) is defined here too, so the README and the code describe the s
 """
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +22,16 @@ def _path(var: str, default: Path) -> Path:
     """Path from env var `var`, or `default`. A relative value is taken from agents/coder/."""
     value = os.environ.get(var)
     return AGENT_DIR / value if value else default
+
+
+def default_workdir(agent_name: str) -> Path:
+    """Where an agent works when CODER_WORKDIR is not set.
+
+    C:\\bugline-agents\\<agent> on Windows, ~/bugline-agents/<agent> everywhere else.
+    """
+    if sys.platform == "win32":
+        return Path(r"C:\bugline-agents") / agent_name
+    return Path.home() / "bugline-agents" / agent_name
 
 
 # state/<agent name>/ holds that agent's credentials and connection id.
@@ -161,7 +172,7 @@ def settings(role_name: str | None = None) -> Settings:
         agent_name=name,
         description=role.description,
         brief=_path("CODER_BRIEF", REPO_ROOT / "switch" / "agent-briefs" / role.brief),
-        workdir=_path("CODER_WORKDIR", Path(r"C:\bugline-agents") / name),
+        workdir=_path("CODER_WORKDIR", default_workdir(name)),
         allowed_tools=role.allowed,
         denied_tools=role.denied,
         claude_bin=os.environ.get("CODER_CLAUDE_BIN") or "claude",

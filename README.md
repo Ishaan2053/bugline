@@ -170,7 +170,7 @@ python agent.py --help
 Expect `8 passed` for the demo app and `37 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
 `--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
-`agents/common` (`7 passed`), `agents/coder` (`10 passed`) and `scripts` (`5 passed`).
+`agents/common` (`12 passed`), `agents/coder` (`13 passed`) and `scripts` (`5 passed`).
 
 ### Part B: Switch, Telegram and Slack
 
