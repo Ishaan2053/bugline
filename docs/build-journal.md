@@ -79,3 +79,29 @@ One dated entry per session: what was done, what broke, what fixed it.
   `bugline-repo` reference, attached to both rooms); a second run printed only "exists".
 - Not tested live: the 5-open-tickets limit, the front desk in Docker against the native server,
   and bootstrap on a fresh server.
+
+## 2026-11-04 (evening): the six additions before the video
+
+Built from the plan in `ADDITIONS.md`, one PR each, all squash-merged with CI green.
+
+- PR #24: the Windows Proactor shutdown error is filtered in one place (`agents/common/loop.py`).
+  The error arrives from a callback, so the filter matches the callback name in the message, not
+  a transport. Coders default to `~/bugline-agents/<name>` off Windows.
+- PR #25: `@frontdesk status` and `@frontdesk status BL-n` in the eng room. A `closed_by` column
+  is added in place with `ALTER TABLE`, so the live database survives.
+- PR #26: `scripts/doctor.py` checks server, bridges, rooms, connections, keys, roles, access
+  rules, tools and clones; live run all PASS in under 7 s. `scripts/reset_demo.py` restarts the
+  demo at `BL-1` and refuses while an agent is live. It recreates only the demo-app container,
+  because `down -v` would also delete the front desk's Docker volume.
+- PR #27: bootstrap takes `--support-bridge` and `--eng-bridge`. Whether a room can be created
+  comes from the connection's `channel_creation_*` fields, not a list of app types. The bundled
+  Mattermost is up; the Mattermost-only path is dry-run only, so it stays "untested by the author".
+- PR #28: the fixer hands its PR to `@reproducer`; only `Verified BL-n: <PR url>` from the
+  reproducer or the room owner closes a ticket. Broke on paper: a message's sender is a
+  participant id, not the agent id, so the check uses `sender_role == "owner"` and the
+  reproducer's name. Fixer branches get a time stamp so a reset run cannot collide with #18.
+- PR #29: `bugline.toml` names the project: repo, paths, test command, ticket prefix, report
+  fields, rooms and agents. With the shipped file every posted message is unchanged; a `QA`
+  config with four fields dry-runs cleanly.
+- Not done live (the session only read): a real bootstrap, `reset_demo.py` for real, the verify
+  loop, the two close negatives, and the Mattermost loop.
