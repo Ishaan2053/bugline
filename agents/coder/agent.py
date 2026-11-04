@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common.conventions import TICKET_ID_RE, format_ticket_id
+from common.loop import run
 from common.switch_client import (
     IncomingMessage,
     OpError,
@@ -202,7 +203,7 @@ def main() -> int:
             print(f"Registered {settings.agent_name} as agent {creds.agent_id}.")
             print(f"Its id and API key are saved in {path}.")
         else:
-            asyncio.run(serve(settings))
+            run(serve(settings))
     except KeyboardInterrupt:
         return 0
     except (RuntimeError, OpError) as exc:  # setup problems: one readable line, no traceback

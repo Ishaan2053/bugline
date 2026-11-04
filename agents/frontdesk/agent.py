@@ -17,6 +17,7 @@ from pathlib import Path
 # agents/, so the shared package `common` imports when this runs as `python agent.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from common.loop import run
 from common.switch_client import (
     IncomingMessage,
     OpError,
@@ -157,7 +158,7 @@ def main() -> int:
             print(f"Registered {config.AGENT_NAME} as agent {creds.agent_id}.")
             print(f"Its id and API key are saved in {config.CREDENTIALS_PATH}.")
         else:
-            asyncio.run(list_rooms() if args.list_rooms else serve())
+            run(list_rooms() if args.list_rooms else serve())
     except KeyboardInterrupt:
         return 0
     except (RuntimeError, OpError) as exc:  # setup problems: one readable line, no traceback
