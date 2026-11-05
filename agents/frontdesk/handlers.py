@@ -101,8 +101,6 @@ def _say(msg: IncomingMessage, body: str, store: Store, models: Models) -> Post:
 
 def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[Post]:
     # Order matters: everything up to classify costs no model call.
-    if store.is_muted(msg.room_id, msg.thread_root):
-        return []
     text = without_mentions(msg.body)
     # A reporter with a question from the eng room: this message is the answer. It is passed on
     # as it is, so no model call and no rate guard.
@@ -114,10 +112,14 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
     if question:
         return _pass_answer(msg, text, question, store, models)
     # "still broken" from someone waiting on a closed ticket: reopen it, again with no model call.
-    if config.REOPEN_RE.search(text):
+    if config.REOPEN_RE.search(" ".join(text.split()[: config.REOPEN_WORDS])):
         closed = store.closed_ticket_of(msg.sender_id, ticket_id)
         if closed and store.reopen_ticket(closed.ticket_id):
             return _reopen(msg, text, closed, store, models)
+    # A muted (off-topic) thread gets nothing more, but only after the two paths above: an answer
+    # to the team's question, or a reopen, counts even in a thread that went off topic.
+    if store.is_muted(msg.room_id, msg.thread_root):
+        return []
     if store.too_many_open_tickets(msg.sender_id):
         return [_reply(msg, messages.TOO_MANY_OPEN)]
     if not store.allow_model_reply(msg.sender_id):

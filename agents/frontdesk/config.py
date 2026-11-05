@@ -83,6 +83,9 @@ ASK_COMMAND = "ask"
 REOPEN_RE = re.compile(
     r"\b(?:reopen|still (?:broken|happening|failing|not working)|not fixed)\b", re.IGNORECASE
 )
+# The phrase must be in the message's first words ("BL-1 is still broken"), so a new, longer
+# report that mentions "still broken" further on goes to the model instead of reopening a ticket.
+REOPEN_WORDS = 4
 
 # "@frontdesk requests" in the eng room lists the feature requests the support room logged.
 REQUESTS_COMMAND = "requests"

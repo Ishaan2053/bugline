@@ -451,6 +451,32 @@ def test_reopen_needs_a_closed_ticket_the_sender_waits_on(store: Store) -> None:
     assert again.calls[0][0] == "classify"
 
 
+def test_a_longer_message_that_says_still_broken_later_is_not_a_reopen(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    close(verified(), store)
+    models = FakeModels(kind("question"))
+    text = "@frontdesk the settle page is still broken when I split by shares"
+    handle(msg(text, n=2), store, models)
+    assert models.calls[0][0] == "classify"
+    assert store.get_ticket("BL-1").status == "closed"  # type: ignore[union-attr]
+
+
+def test_a_muted_thread_still_takes_an_answer_and_a_reopen(store: Store) -> None:
+    """The reporter's ticket thread went off topic ("thanks!") and was muted. Their answer to the
+    team's question, and their `still broken`, must still get through."""
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    handle(msg("@frontdesk thanks!", n=2, thread="m1"), store, FakeModels(kind("off-topic")))
+    assert handle(msg("@frontdesk hello?", n=3, thread="m1"), store, FakeModels()) == []
+
+    handle(eng("@frontdesk ask BL-1: which browser?", thread="t1"), store, FakeModels())
+    answer, thanks = handle(msg("@frontdesk Firefox", n=4, thread="m1"), store, FakeModels())
+    assert answer.room == config.ROOM_ENG and "Firefox" in answer.body
+    assert thanks.body == messages.ANSWER_PASSED
+    close(verified(), store)
+    posts = handle(msg("@frontdesk still broken", n=5, thread="m1"), store, FakeModels())
+    assert posts[0].body.startswith("BL-1 (reopened)")
+
+
 def test_requests_lists_what_the_support_room_asked_for(store: Store) -> None:
     assert handle(eng("@frontdesk requests"), store, FakeModels())[0].body == messages.NO_REQUESTS
     handle(msg("@frontdesk please add CSV export", n=1), store, FakeModels(kind("request")))
