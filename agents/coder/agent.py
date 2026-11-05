@@ -23,6 +23,8 @@ from collections.abc import Awaitable, Callable
 from functools import partial
 from pathlib import Path
 
+import httpx
+
 # agents/, so the shared package `common` imports when this runs as `python agent.py`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -216,7 +218,7 @@ class Coder:
             await self.api.post(
                 self.connection.connection_id, self.connection.room_id, body, msg.thread_root
             )
-        except (OpError, OSError) as exc:
+        except (OpError, OSError, httpx.HTTPError) as exc:
             log.error("could not post %r: %s", body[:60], exc)
 
 

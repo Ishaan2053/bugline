@@ -130,6 +130,26 @@ def test_reconnect_reuses_connection_id_and_resumes_from_cursor() -> None:
     }
 
 
+def test_reconnect_before_any_event_starts_at_the_head() -> None:
+    """Cursor 0 means nothing was delivered. Sent back as start_from=0 it would replay the
+    agent's whole history (seen live on Nov 6, when the server's database restarted)."""
+
+    async def script(ws, attempt: int) -> None:
+        if attempt == 1:
+            state = {"generation": 2, "rooms": ["room-s"], "cursor": 0}
+            await ws.send(frame("connection_state", state))
+            await ws.close(1011, "server hiccup")
+        else:
+            await ws.close(4409, "taken over")
+
+    opens: list = []
+    run_against(script, opens)
+
+    query = parse_qs(urlsplit(opens[1].path).query)
+    assert "start_from" not in query
+    assert query["expected_generation"] == ["2"]
+
+
 def test_taken_over_eviction_stops() -> None:
     async def script(ws, attempt: int) -> None:
         await ws.send(frame("evicted", {"code": "taken_over", "reason": "another open"}))
