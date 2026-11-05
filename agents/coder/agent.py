@@ -54,6 +54,7 @@ from claude_runner import (
     ClaudeResult,
     build_prompt,
     claude_command,
+    restore_clone,
     run_claude,
     trim_reply,
     write_brief,
@@ -146,6 +147,7 @@ class Coder:
         if result.ok:
             await self.answer(trim_reply(result.text), msg)
         else:
+            await restore_clone(self.settings.clone)
             await self._post(f"Could not finish: {result.text[:300]}", msg)
 
     async def refresh_brief(self) -> None:

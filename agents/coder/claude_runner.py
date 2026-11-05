@@ -136,6 +136,31 @@ async def run_claude(cmd: list[str], prompt: str, cwd: str, timeout_s: float) ->
     return parse_output(proc.returncode, out, err)
 
 
+async def restore_clone(clone: Path) -> None:
+    """After a run that did not finish, put the clone back on the default branch with no edits
+    left behind, so the next job does not start from, or commit, half-finished work. Ignored
+    files (the app's venv, scratch scripts, databases) stay. Never raises."""
+    if not clone.is_dir():
+        return
+    branch = config.PROJECT.default_branch
+    for cmd in (("git", "checkout", "--force", branch), ("git", "clean", "-fd")):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(clone),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, err = await proc.communicate()
+        except OSError as exc:
+            log.warning("could not run %s in %s: %s", " ".join(cmd), clone, exc)
+            return
+        if proc.returncode:
+            log.warning("%s in %s failed: %s", " ".join(cmd), clone, err.decode().strip())
+            return
+    log.info("%s is back on %s with nothing left over", clone, branch)
+
+
 async def _kill(proc: asyncio.subprocess.Process) -> None:
     """Stop a run. On Windows, taskkill /T also stops what Claude Code started (python, git)."""
     if sys.platform == "win32":
