@@ -169,6 +169,61 @@ def test_op_call_sends_bare_args_and_connection_header() -> None:
     assert json.loads(request.content) == {"body": "hi"}  # None arguments are left out
 
 
+# What `list_references` answers for a room with the kit attached (shape seen live on Nov 6).
+ATTACHED = {
+    "documents": [{"id": "d-room", "name": "room-notes.md"}],
+    "packages": [
+        {
+            "name": "bugline-kit",
+            "documents": [
+                {"id": "d-intake", "name": "intake-rules.md"},
+                {"id": "d-fix", "name": "fix-policy.md"},
+            ],
+        }
+    ],
+}
+
+
+def read_documents(names: list[str], respond) -> tuple[dict[str, str], list[tuple[str, dict]]]:
+    """Run room_documents against a bridge answering `respond(op, body)`; return it and calls."""
+    calls: list[tuple[str, dict]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        op = request.url.path.rsplit("/", 1)[-1]
+        body = json.loads(request.content)
+        calls.append((op, body))
+        return respond(op, body)
+
+    async def main() -> dict[str, str]:
+        api = mock_api(handler)
+        try:
+            return await api.room_documents("c-1", names)
+        finally:
+            await api.aclose()
+
+    return asyncio.run(main()), calls
+
+
+def test_room_documents_reads_packaged_documents_by_name() -> None:
+    def respond(op: str, body: dict) -> httpx.Response:
+        if op == "list_references":
+            return httpx.Response(200, json={"result": ATTACHED})
+        loaded = [{"id": i, "content": f"text of {i}"} for i in body["ids"]]
+        return httpx.Response(200, json={"result": loaded})
+
+    docs, calls = read_documents(["intake-rules.md", "not-attached.md"], respond)
+
+    assert docs == {"intake-rules.md": "text of d-intake"}  # a missing name is left out
+    assert calls == [("list_references", {}), ("load_internal_documents", {"ids": ["d-intake"]})]
+
+
+def test_room_documents_is_empty_when_switch_cannot_answer() -> None:
+    docs, _ = read_documents(["intake-rules.md"], lambda op, body: httpx.Response(500, json={}))
+    assert docs == {}
+    docs, calls = read_documents([], lambda op, body: httpx.Response(500, json={}))
+    assert (docs, calls) == ({}, [])  # nothing wanted, nothing asked
+
+
 def test_targeted_message_and_who_it_reached() -> None:
     seen: list[dict] = []
 

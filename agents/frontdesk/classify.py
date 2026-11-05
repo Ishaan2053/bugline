@@ -202,8 +202,16 @@ def _prompt(name: str, **values: str) -> str:
     return Template(template).substitute(config.PROJECT.values(), **values)
 
 
+# The intake rules as the bugline-kit in Switch holds them, already rendered by bootstrap.
+# agent.py sets this before each support message; None means use the repo copy.
+intake_rules_from_switch: str | None = None
+
+
 def _intake_rules() -> str:
-    """The intake rules with the project's names and report fields filled in."""
+    """The intake rules with the project's names and report fields filled in: Switch's copy, or
+    the repo's when the front desk could not read it from Switch."""
+    if intake_rules_from_switch is not None:
+        return intake_rules_from_switch
     return config.PROJECT.render(_reference(config.INTAKE_RULES_PATH))
 
 

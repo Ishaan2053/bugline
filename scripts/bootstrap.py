@@ -81,7 +81,10 @@ REFERENCE_NAME = "bugline-repo"  # made by the template's `references:`
 # Named after the project, so a second project on the same server gets its own kit and documents.
 KIT_NAME = f"{PROJECT.name}-kit"
 KIT_DESCRIPTION = "The rules Bugline's agents work by, and the repo they work on"
-KIT_INSTRUCTIONS = "The same files are in switch/docs/ in the repo; the repo copy is the source."
+KIT_INSTRUCTIONS = (
+    "Written in switch/docs/ in the repo and copied here by scripts/bootstrap.py. The agents read"
+    " this copy before each message or run, so an edit here applies at once."
+)
 # The library documents: file in switch/docs/ -> when to read it. The text is read at run time.
 KIT_DOCS = {
     "intake-rules.md": (
@@ -588,7 +591,11 @@ def ensure_kit(gw: Gateway, names: dict[str, str], room_ids: dict[str, str]) -> 
 
     if package:
         package_id = package["id"]
-        say(f"package {KIT_NAME}", "exists")
+        if package.get("instructions") == KIT_INSTRUCTIONS:
+            say(f"package {KIT_NAME}", "exists")
+        else:
+            gw.write("PATCH", f"/packages/{package_id}", {"instructions": KIT_INSTRUCTIONS})
+            say(f"package {KIT_NAME}", gw.done("updated (instructions)"))
     else:
         body = {"name": KIT_NAME, "description": KIT_DESCRIPTION, "instructions": KIT_INSTRUCTIONS}
         created = gw.write("POST", "/packages", body)

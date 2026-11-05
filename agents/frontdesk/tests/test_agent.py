@@ -1,5 +1,5 @@
-"""Tests for how agent.py carries out posts (op choice, threading and the two fallbacks), and how
-it finds the verifier's name and the eng room at start."""
+"""Tests for how agent.py carries out posts (op choice, threading and the two fallbacks), how it
+finds the verifier's name and the eng room at start, and where the intake rules come from."""
 
 import asyncio
 import json
@@ -8,8 +8,9 @@ import httpx
 import pytest
 from common.switch_client import Credentials, RoomConnection, SwitchApi
 
+import classify
 import config
-from agent import Poster, escalation_room, verifier_names
+from agent import Poster, escalation_room, refresh_intake_rules, verifier_names
 from handlers import Post
 
 CREDS = Credentials("agent-1", "key-1")
@@ -202,3 +203,37 @@ def test_reports_go_where_the_escalates_to_link_points() -> None:
 def test_without_exactly_one_usable_link_the_front_desk_stops(links: list[dict]) -> None:
     with pytest.raises(RuntimeError, match="bootstrap"):
         find_eng(links)
+
+
+def refresh(monkeypatch: pytest.MonkeyPatch, respond) -> str:
+    """Run refresh_intake_rules against a bridge answering `respond(op)`; return the rules the
+    model would get."""
+    monkeypatch.setattr(classify, "intake_rules_from_switch", None)
+    transport = httpx.MockTransport(lambda request: respond(request.url.path.rsplit("/", 1)[-1]))
+    support = RoomConnection(config.ROOM_SUPPORT, "room-support", CREDS, "http://s.test", "c-sup")
+
+    async def main() -> None:
+        api = SwitchApi("http://switch.test", CREDS, transport=transport)
+        try:
+            await refresh_intake_rules(api, support)
+        finally:
+            await api.aclose()
+
+    asyncio.run(main())
+    return classify._intake_rules()
+
+
+def test_the_intake_rules_come_from_the_kit_in_switch(monkeypatch) -> None:
+    name = config.INTAKE_RULES_PATH.name
+
+    def respond(op: str) -> httpx.Response:
+        if op == "list_references":
+            return ok({"packages": [{"documents": [{"id": "d1", "name": name}]}]})
+        return ok([{"id": "d1", "content": "RULES AS EDITED IN SWITCH"}])
+
+    assert refresh(monkeypatch, respond) == "RULES AS EDITED IN SWITCH"
+
+
+def test_without_switch_the_intake_rules_are_the_repo_copy(monkeypatch) -> None:
+    rules = refresh(monkeypatch, lambda op: httpx.Response(500, json={"detail": "down"}))
+    assert rules == "TEST INTAKE RULES"  # conftest points the repo copy at this text

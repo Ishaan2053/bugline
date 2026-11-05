@@ -56,6 +56,28 @@ def test_running_setup_passes(tmp_path: Path, capsys: pytest.CaptureFixture) -> 
     assert "PASS access rule bugline-fixer (the owner only, in bugline-eng only)" in out
     assert "PASS verify hand-off settings in both .env files" in out
     assert "PASS link bugline-support -> bugline-eng 'escalates to'" in out
+    assert f"PASS document intake-rules.md in {bootstrap.KIT_NAME}" in out
+
+
+class StaleKit(RunningSwitch):
+    """The running setup after switch/docs/fix-policy.md was edited without rerunning bootstrap."""
+
+    def read(self, path: str) -> object:
+        body = super().read(path)
+        if path == "/gateway/documents/doc-fix-policy.md":
+            body["content"] = "an older text"
+        return body
+
+
+def test_a_kit_document_behind_the_repo_fails_with_the_fix(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    ok, out = check(StaleKit(), tmp_path, capsys)
+
+    assert not ok
+    assert f"FAIL document fix-policy.md in {bootstrap.KIT_NAME}" in out
+    assert "differs from switch/docs/; run scripts/bootstrap.py" in out
+    assert f"PASS document intake-rules.md in {bootstrap.KIT_NAME}" in out
 
 
 class Unlinked(RunningSwitch):

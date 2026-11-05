@@ -23,6 +23,9 @@ import httpx
 
 from bootstrap import (
     APP_DIR,
+    KIT_DOCS,
+    KIT_NAME,
+    REPO_ROOT,
     AgentSpec,
     Gateway,
     Layout,
@@ -32,6 +35,7 @@ from bootstrap import (
     load_agent_configs,
     load_layout,
     read_options,
+    render_doc,
     room_members,
 )
 from common.env import read_env_file
@@ -102,6 +106,7 @@ def switch_checks(gw: Gateway, layout: Layout, email: str, password: str) -> Ite
     for key, specs in room_members(layout).items():
         yield from room_checks(gw, layout.room_names[key], rooms.get(ids[key]), specs, agent_ids)
     yield link_check(gw, layout, ids)
+    yield from kit_checks(gw)
     creds = {}
     for spec in layout.agents:
         check, creds[spec.name] = key_check(gw, spec, agent_ids.get(spec.name))
@@ -173,6 +178,19 @@ def link_check(gw: Gateway, layout: Layout, ids: dict[str, str]) -> Check:
         targets == [ids["eng"]],
         f"the front desk sends reports where this link points; {RERUN}",
     )
+
+
+def kit_checks(gw: Gateway) -> Iterator[Check]:
+    """Each kit document in Switch has the text of its switch/docs/ file. The agents follow
+    Switch's copy, so a file edited after the last bootstrap run would not reach them."""
+    package = next((p for p in gw.get("/packages") if p["name"] == KIT_NAME), None)
+    in_kit = (gw.get(f"/packages/{package['id']}/documents") or []) if package else []
+    ids = {d["name"]: d["id"] for d in in_kit}
+    for name in KIT_DOCS:
+        current = (gw.get(f"/documents/{ids[name]}") or {}) if name in ids else {}
+        same = current.get("content") == render_doc(REPO_ROOT / "switch" / "docs" / name)
+        hint = "differs from switch/docs/" if current else f"not in {KIT_NAME}"
+        yield Check(f"document {name} in {KIT_NAME}", same, f"{hint}; {RERUN}")
 
 
 def connected_agents(gw: Gateway, layout: Layout) -> list[str]:

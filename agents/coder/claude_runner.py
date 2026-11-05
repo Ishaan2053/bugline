@@ -1,8 +1,9 @@
 """Run Claude Code headless (`claude -p`) for one job, and turn its answer into a short reply.
 
-At start, `write_brief` renders the brief in switch/agent-briefs/ and the role's documents in
-switch/docs/ with the project's names from bugline.toml, into state/<agent>/brief.md. That file is
-appended to Claude Code's system prompt at every run. The documents travel with the brief because
+Before every run, `write_brief` renders the brief in switch/agent-briefs/ with the project's names
+from bugline.toml and adds the role's documents, into state/<agent>/brief.md. Each document is the
+bugline-kit's copy in Switch when the agent could read it, else the repo file in switch/docs/.
+That file is appended to Claude Code's system prompt. The documents travel with the brief because
 the repo the agent clones need not contain switch/. The prompt (the message, its sender and the
 thread so far) goes in on stdin, which avoids Windows command-line quoting and length limits.
 Claude Code prints one JSON object (`--output-format json`) whose `result` is its final message;
@@ -15,6 +16,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,16 +35,22 @@ class ClaudeResult:
     text: str  # the final answer, or why there is none
 
 
-def write_brief(settings: config.Settings) -> Path:
+def write_brief(settings: config.Settings, from_switch: Mapping[str, str] | None = None) -> Path:
     """Render the brief and the role's documents into settings.rendered_brief; return its path.
 
     The documents follow the brief, each after a `---` line, in the order the role lists them.
+    `from_switch` maps a document's file name to its text in Switch, which bootstrap already
+    rendered; a document not in it is rendered from the repo.
     """
     values = config.doc_values(settings)
-    parts = [settings.brief, *settings.docs]
-    text = "\n---\n\n".join(
-        config.PROJECT.render(path.read_text(encoding="utf-8"), **values) for path in parts
-    )
+    from_switch = from_switch or {}
+
+    def text_of(path: Path) -> str:
+        if path in settings.docs and path.name in from_switch:
+            return from_switch[path.name]
+        return config.PROJECT.render(path.read_text(encoding="utf-8"), **values)
+
+    text = "\n---\n\n".join(text_of(path) for path in [settings.brief, *settings.docs])
     out = settings.rendered_brief
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
@@ -58,7 +66,7 @@ def claude_command(settings: config.Settings, claude_path: str) -> list[str]:
         "json",
         "--no-session-persistence",  # every job starts clean; the thread is in the prompt
         "--append-system-prompt-file",
-        str(settings.brief),
+        str(settings.rendered_brief),
         # Skip the operator's user settings (their allow rules, plugins, model), so the rules
         # below are the only permissions, on any machine. Skip the project source too: it loads
         # the clone's CLAUDE.md, which is written for the repo's developers (this repo's says to
