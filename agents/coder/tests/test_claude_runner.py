@@ -3,6 +3,7 @@ subprocess, stdin and timeout handling are real but nothing calls Claude."""
 
 import asyncio
 import json
+import subprocess
 import sys
 
 from common.conventions import REPLY_MAX_LINES
@@ -14,6 +15,7 @@ from claude_runner import (
     build_prompt,
     claude_command,
     parse_output,
+    restore_clone,
     run_claude,
     trim_reply,
 )
@@ -107,3 +109,41 @@ def test_trim_keeps_short_replies_and_caps_long_ones() -> None:
 
     wide = trim_reply("x" * 5000)
     assert len(wide) < config.REPLY_MAX_CHARS + 100 and "(trimmed" in wide
+
+
+def git(clone, *args: str) -> str:
+    done = subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        cwd=clone,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout.strip()
+
+
+def test_restore_clone_drops_what_an_unfinished_run_left(tmp_path) -> None:
+    """A timed-out fixer: on its ticket branch, a tracked file edited, a new test file written."""
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    git(clone, "init", "-q", "-b", config.PROJECT.default_branch)
+    (clone / ".gitignore").write_text("scratch/\n", encoding="utf-8")
+    (clone / "app.py").write_text("ok\n", encoding="utf-8")
+    git(clone, "add", ".")
+    git(clone, "commit", "-q", "-m", "start")
+    git(clone, "checkout", "-q", "-b", "fix/bl-1")
+    (clone / "app.py").write_text("half-finished\n", encoding="utf-8")
+    (clone / "test_new.py").write_text("x\n", encoding="utf-8")
+    (clone / "scratch").mkdir()
+    (clone / "scratch" / "bl_1.py").write_text("kept\n", encoding="utf-8")
+
+    asyncio.run(restore_clone(clone))
+
+    assert git(clone, "branch", "--show-current") == config.PROJECT.default_branch
+    assert (clone / "app.py").read_text(encoding="utf-8") == "ok\n"
+    assert not (clone / "test_new.py").exists()
+    assert (clone / "scratch" / "bl_1.py").exists()  # ignored files stay
+
+
+def test_restore_clone_without_a_clone_does_nothing(tmp_path) -> None:
+    asyncio.run(restore_clone(tmp_path / "missing"))
