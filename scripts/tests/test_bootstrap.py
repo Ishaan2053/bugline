@@ -185,6 +185,7 @@ def make_layout(tmp_path: Path, registered: bool) -> bootstrap.Layout:
         coder_eng_room_var="SWITCH_ENG_ROOM_ID",
         verifier_id_var="SWITCH_REPRODUCER_AGENT_ID",
         frontdesk_name_var="FRONTDESK_AGENT_NAME",
+        escalation_link="escalates to",
     )
 
 

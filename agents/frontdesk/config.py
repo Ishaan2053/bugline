@@ -107,7 +107,12 @@ REGISTRATION_KEY_ENV = "SWITCH_REGISTRATION_KEY"
 ROOM_SUPPORT = "support"
 ROOM_ENG = "eng"
 ROOM_NAMES = {key: PROJECT.rooms[key] for key in (ROOM_SUPPORT, ROOM_ENG)}
+# The front desk reads only the support room's id. The eng room's id is written for doctor.py and
+# the coders; the front desk finds that room through ESCALATION_LINK.
 ROOM_ID_ENVS = {ROOM_SUPPORT: "SWITCH_SUPPORT_ROOM_ID", ROOM_ENG: "SWITCH_ENG_ROOM_ID"}
+# The label of the support room's link to the eng room (scripts/bootstrap.py makes it). Reports go
+# where this link points, so the link in Switch, not a room id in .env, decides where they go.
+ESCALATION_LINK = "escalates to"
 # The chat app each room is on, as Switch names its connection types ("bridge_type"). Only
 # scripts/bootstrap.py reads it, to pick the connection. bugline.toml gives the default, these
 # env vars override it, and bootstrap's flags override both.
@@ -130,9 +135,9 @@ def verifier_agent_id() -> str:
     return os.environ.get(VERIFIER_AGENT_ID_ENV, "")
 
 
-def room_ids() -> dict[str, str]:
-    """Room key -> Switch room id, from the environment."""
-    return {key: require_env(env) for key, env in ROOM_ID_ENVS.items()}
+def support_room_id() -> str:
+    """The support room's id, from the environment."""
+    return require_env(ROOM_ID_ENVS[ROOM_SUPPORT])
 
 
 # --- Files --------------------------------------------------------------------------------------

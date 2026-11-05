@@ -1,5 +1,5 @@
-"""Tests for how agent.py carries out posts (op choice, threading and the two fallbacks) and how
-it finds the verifier's name at start."""
+"""Tests for how agent.py carries out posts (op choice, threading and the two fallbacks), and how
+it finds the verifier's name and the eng room at start."""
 
 import asyncio
 import json
@@ -9,7 +9,7 @@ import pytest
 from common.switch_client import Credentials, RoomConnection, SwitchApi
 
 import config
-from agent import Poster, verifier_names
+from agent import Poster, escalation_room, verifier_names
 from handlers import Post
 
 CREDS = Credentials("agent-1", "key-1")
@@ -158,3 +158,47 @@ def test_no_verifier_id_or_a_failed_lookup_leaves_only_the_owner(monkeypatch, ca
     assert "SWITCH_REPRODUCER_AGENT_ID is not set" in caplog.text
     assert lookup(monkeypatch, "a-gone", respond) == frozenset()
     assert "only the room owner can close" in caplog.text
+
+
+def find_eng(links: list[dict]) -> str:
+    """Run escalation_room against a bridge whose support room has `links`."""
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, request.headers.get("X-Switch-Connection-Id", "")))
+        return ok(links)
+
+    support = RoomConnection(config.ROOM_SUPPORT, "room-support", CREDS, "http://s.test", "c-sup")
+
+    async def main() -> str:
+        support.connected.set()
+        api = SwitchApi("http://switch.test", CREDS, transport=httpx.MockTransport(handler))
+        try:
+            return await escalation_room(api, support)
+        finally:
+            await api.aclose()
+            assert seen == [("/agents/agent-1/ops/list_linked_rooms", "c-sup")]
+
+    return asyncio.run(main())
+
+
+def link(label: str, room: str, access: str = "member") -> dict:
+    return {"target_room_id": room, "label": label, "access": access}
+
+
+def test_reports_go_where_the_escalates_to_link_points() -> None:
+    links = [link("related", "room-x"), link(config.ESCALATION_LINK, "room-eng")]
+    assert find_eng(links) == "room-eng"
+
+
+@pytest.mark.parametrize(
+    "links",
+    [
+        [],  # the link was removed
+        [link(config.ESCALATION_LINK, "room-eng", access="not_member")],
+        [link(config.ESCALATION_LINK, "room-a"), link(config.ESCALATION_LINK, "room-b")],
+    ],
+)
+def test_without_exactly_one_usable_link_the_front_desk_stops(links: list[dict]) -> None:
+    with pytest.raises(RuntimeError, match="bootstrap"):
+        find_eng(links)

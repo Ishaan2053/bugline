@@ -1,9 +1,11 @@
 """Run the front desk: `python agent.py` (or `--register` once, `--list-rooms` to find room ids).
 
-Opens one Switch connection per room, hands each addressed message to handlers.py and carries
-out the posts it returns. Messages are handled one at a time on a single worker thread: the
-Gemini SDK and sqlite3 are blocking, and one thread keeps ticket numbers and drafts consistent
-while the event loop keeps answering pings. A message that fails is logged and skipped.
+Connects to the support room, finds the eng room through the support room's `escalates to`
+link, and connects there too: one Switch connection per room. It hands each addressed message
+to handlers.py and carries out the posts it returns. Messages are handled one at a time on a
+single worker thread: the Gemini SDK and sqlite3 are blocking, and one thread keeps ticket
+numbers and drafts consistent while the event loop keeps answering pings. A message that fails
+is logged and skipped.
 """
 
 import argparse
@@ -38,7 +40,7 @@ from store import Store
 log = logging.getLogger("frontdesk")
 
 # Ops the agent cannot work without; checked against GET /agents/{id}/ops at startup.
-REQUIRED_OPS = ("post_message", "send_targeted_message")
+REQUIRED_OPS = ("post_message", "send_targeted_message", "list_linked_rooms")
 
 
 class Poster:
@@ -113,6 +115,30 @@ async def verifier_names(api: SwitchApi) -> frozenset[str]:
     return frozenset({name} if name else ())
 
 
+async def escalation_room(api: SwitchApi, support: RoomConnection) -> str:
+    """The eng room's id: where the support room's `escalates to` link points.
+
+    Asked of Switch once the support connection is up, since the op works on a connected room.
+    The link must be the only one with that label and point at a room the front desk is in;
+    otherwise the front desk stops, because it would not know where to send reports.
+    """
+    await support.connected.wait()
+    links = await api.call("list_linked_rooms", support.connection_id) or []
+    targets = [
+        link["target_room_id"]
+        for link in links
+        if link.get("label") == config.ESCALATION_LINK and link.get("access") == "member"
+    ]
+    if len(targets) != 1:
+        raise RuntimeError(
+            f"{config.ROOM_NAMES[config.ROOM_SUPPORT]} has {len(targets)}"
+            f" '{config.ESCALATION_LINK}' links to a room this agent is in; it needs exactly one."
+            " Run scripts/bootstrap.py"
+        )
+    log.info("reports go where the '%s' link points: room %s", config.ESCALATION_LINK, targets[0])
+    return targets[0]
+
+
 async def dispatch(
     queue: asyncio.Queue[IncomingMessage],
     store: Store,
@@ -147,20 +173,22 @@ async def serve() -> None:
         raise RuntimeError(f"bridge does not offer {missing}")
     verifiers = await verifier_names(api)
 
-    connections = {
-        room: RoomConnection(
+    def connection(room: str, room_id: str) -> RoomConnection:
+        return RoomConnection(
             room, room_id, creds, base_url, connection_id_for(room, config.CONNECTIONS_PATH)
         )
-        for room, room_id in config.room_ids().items()
-    }
+
+    support = connection(config.ROOM_SUPPORT, config.support_room_id())
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="handlers")
     # sqlite3 objects stay on the thread that made them, so the store is made on the worker.
     store = await asyncio.get_running_loop().run_in_executor(worker, Store)
     queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
     try:
         async with asyncio.TaskGroup() as tasks:
-            for connection in connections.values():
-                tasks.create_task(connection.run(queue))
+            tasks.create_task(support.run(queue))
+            eng = connection(config.ROOM_ENG, await escalation_room(api, support))
+            tasks.create_task(eng.run(queue))
+            connections = {config.ROOM_SUPPORT: support, config.ROOM_ENG: eng}
             tasks.create_task(dispatch(queue, store, Poster(api, connections), worker, verifiers))
     finally:
         await api.aclose()
