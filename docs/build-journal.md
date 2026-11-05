@@ -195,3 +195,25 @@ checked against the code or a live probe before anything changed.
   - Part B has a fork step and a line for non-Windows setups.
   - The Mattermost variant and the Switch-docs lessons moved to `docs/switch-setup.md`, and
     "Run it on your own repo" moved to `docs/own-repo.md`.
+
+## 2026-11-06
+
+Feature-freeze day. A review asked which Switch features the agents use at run time. They called
+four ops (`post_message`, `send_targeted_message`, `get_room_detail`, `assume_role`) out of about
+55. The room links and the `bugline-kit` documents were set up by bootstrap but read by nothing:
+the front desk took the eng room from `.env` and the rules from the repo.
+
+- PR #47: the front desk sent a message's posts inside one `try`. A failed `Closed BL-n` reply in
+  eng would have skipped every "fixed" message. Each post now goes out on its own.
+- PR #48: the front desk finds `bugline-eng` by asking Switch where the support room's
+  "escalates to" link points (`list_linked_rooms`). No link, no start. `doctor.py` checks it.
+- PR #49: the front desk reads `intake-rules.md` from the kit before each support message, and
+  the coders rebuild their brief from the kit before each run (`list_references`, then
+  `load_internal_documents`). The repo copy is the fallback. `doctor.py` checks that the kit
+  matches `switch/docs/`.
+- Switch Console lists only its own `switch-buddy-admin`. The three Bugline agents are on the
+  server (`GET /gateway/agents`), as custom agents Console does not show.
+- Rehearsal on Telegram and Slack after `reset_demo.py`, all on the new code: question answered,
+  vague report asked for four fields, off-topic declined, duplicate matched to `BL-1`, fault 1
+  reproduced in 37 s, sam refused by Switch, and 95 s from the PM's approval to "BL-1 is fixed"
+  for both reporters. Every brief came from Switch, and no tool call was refused.

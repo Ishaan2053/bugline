@@ -252,10 +252,10 @@ pytest -q
 python agent.py --help
 ```
 
-Expect `8 passed` for the demo app and `83 passed, 1 skipped` for the front desk (the skipped test
+Expect `8 passed` for the demo app and `90 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
 `--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
-`agents/common` (`28 passed`), `agents/coder` (`24 passed`) and `scripts` (`23 passed`).
+`agents/common` (`30 passed`), `agents/coder` (`25 passed`) and `scripts` (`25 passed`).
 
 ### Part B: Switch, Telegram and Slack
 
@@ -348,8 +348,14 @@ reads the server's address and admin login from Switch Console; anywhere else, s
    clones to `origin/main`, closes ticket PRs and deletes their branches except `--keep` (default
    #18 and #19, the PRs this README cites), and recreates the demo app's container. It refuses
    while an agent is connected. `doctor.py` prints one PASS or FAIL line per thing the demo needs:
-   server, bridges, rooms, agent connections, keys, the verify hand-off settings in both `.env`
-   files, roles, access rules, `claude`, `gh`, `git` and the clones. Record only when every line is PASS. `--gemini` adds one model call.
+   server, bridges, rooms, agent connections, the "escalates to" link, the kit documents against
+   `switch/docs/`, keys, the verify hand-off settings in both `.env` files, roles, access rules,
+   `claude`, `gh`, `git` and the clones. Record only when every line is PASS. `--gemini` adds one
+   model call.
+
+   Switch Console's agent list shows only `switch-buddy-admin`, Console's own agent. Bugline's
+   three agents are custom agents registered over the agent protocol, and Console does not list
+   them. They are on the server: `doctor.py` checks each one, and `GET /gateway/agents` lists them.
 6. Run the seeded paths in
    [switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
 
