@@ -250,6 +250,22 @@ answers "Closed BL-1, telling the reporter.", and in `bugline-support` "<you>, B
 link>". `@frontdesk status` shows `closed by bugline-repro`. Do not merge the PR; it removes the
 seeded fault.
 
+**Ask the reporter.** PM, in the ticket's thread, before approving:
+`@frontdesk ask BL-1: which browser were you using?` → "Asked <you> in bugline-support. Their
+answer will come to this thread." In `bugline-support` the reporter gets the question under their
+report; their next message (`@frontdesk Firefox 131 on Windows`) comes back to the `BL-1` thread as
+"<you> answered <PM>'s question on BL-1: Firefox 131 on Windows". No model call.
+
+**Reopen.** After the close, the reporter, in their thread: `@frontdesk still broken for me` →
+"Reopened BL-1 and passed it back to the team." In `#bugline-eng`, `BL-1 (reopened): ...` addressed
+to `@reproducer`, with the PR that closed it. The PR is not merged, so the reproducer reproduces
+again. Close it by hand as the PM with `@frontdesk Verified BL-1: <PR link>`.
+
+**Any language.** Second user: `@frontdesk bhai share link kholte hi error aa raha hai` → the
+missing-field question in Hinglish. Completing it in Hinglish opens a ticket whose report in
+`#bugline-eng` is in English, with "wrote in Hinglish" on the reporter line. One `translate` line
+in `calls.log` per translated reply.
+
 **Path 3: not a bug.** User:
 
 ```
@@ -260,7 +276,8 @@ Expect: an answer from `demo-app/README.md` (the expense has the wrong payer; re
 `#bugline-eng`.
 
 **A request.** `@frontdesk can you add a way to edit an expense?` → "Thanks, I've noted that as a
-request for the team." Nothing in `#bugline-eng`.
+request for the team." Nothing in `#bugline-eng`. PM: `@frontdesk requests` lists it with the
+sender's name and age.
 
 **Path 6: off-topic.** `@frontdesk what's a good phone under 20k?` → "Sorry, that's not something
 I can help with here." A follow-up in the same thread (`@frontdesk hello?`) gets no reply and no
@@ -285,7 +302,7 @@ Expect: "Already tracked as BL-2, I'll tell you when it's fixed." Nothing new in
 
 **Only the verifier closes.** While `BL-2` is open, a second account in `#bugline-eng`, in the
 `BL-2` thread: `@frontdesk Verified BL-2: https://github.com/<you>/bugline/pull/19` → "Only
-@reproducer or the room owner can close a ticket, ...", and `@frontdesk status` still shows `BL-2`
+the reproducer or the room owner can close a ticket, ...", and `@frontdesk status` still shows `BL-2`
 open. The PM may post the same line by hand, which closes the ticket and makes `status` show
 `closed by <PM>`; try that on a ticket the rest of the run does not need. A PR that does not fix
 the bug gets `Not verified BL-n: <why>` from the reproducer, and the ticket stays open.
