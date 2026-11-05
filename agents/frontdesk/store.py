@@ -276,6 +276,12 @@ class Store:
                 " WHERE ticket_id = ? AND status = 'open'",
                 (pr_url, self._iso_now(), closed_by, ticket_id),
             ).rowcount
+            # A question on a closed ticket no longer waits for an answer, so the reporter's
+            # next message (say, "still broken") is read as itself.
+            self._db.execute(
+                "UPDATE questions SET answered_at = ? WHERE ticket_id = ? AND answered_at IS NULL",
+                (self._iso_now(), ticket_id),
+            )
         return self.subscribers(ticket_id) if updated else []
 
     def reopen_ticket(self, ticket_id: str) -> bool:
@@ -360,11 +366,17 @@ class Store:
     # --- drafts ---------------------------------------------------------------------------------
 
     def get_draft(self, room_id: str, user_id: str) -> Draft | None:
+        """The user's unfinished bug report, unless it is older than DRAFT_MAX_AGE_S: a report
+        from long ago is not continued by today's message."""
         row = self._db.execute(
-            "SELECT report_json, missing_json FROM drafts WHERE room_id = ? AND user_id = ?",
+            "SELECT report_json, missing_json, updated_at FROM drafts"
+            " WHERE room_id = ? AND user_id = ?",
             (room_id, user_id),
         ).fetchone()
         if not row:
+            return None
+        age = self.utc_now() - datetime.fromisoformat(row["updated_at"])
+        if age.total_seconds() > config.DRAFT_MAX_AGE_S:
             return None
         return Draft(json.loads(row["report_json"]), json.loads(row["missing_json"]))
 

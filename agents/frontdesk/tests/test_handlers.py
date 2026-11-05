@@ -29,6 +29,7 @@ class FakeModels:
         self.results = list(results)
         self.duplicate = duplicate
         self.translate_error: Exception | None = None
+        self.duplicate_error: Exception | None = None
         self.calls: list[tuple] = []
 
     def classify(self, message: str, draft: Draft | None = None) -> Classification:
@@ -40,6 +41,8 @@ class FakeModels:
 
     def check_duplicate(self, report: Report, open_tickets: Sequence[Ticket]) -> str | None:
         self.calls.append(("duplicate", [t.ticket_id for t in open_tickets]))
+        if self.duplicate_error:
+            raise self.duplicate_error
         return self.duplicate
 
     def answer_question(self, question: str) -> str:
@@ -526,3 +529,55 @@ def test_rate_guard_replies_are_never_translated(store: Store) -> None:
     models = FakeModels()
     assert handle(msg("@frontdesk hello"), store, models) == [reply(messages.COOLDOWN)]
     assert models.calls == []
+
+
+# --- state left behind by an earlier message --------------------------------------------------
+
+
+def test_a_closed_tickets_question_does_not_swallow_still_broken(store: Store) -> None:
+    """The reporter never answered `ask`; after the close, `still broken` reopens the ticket."""
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    handle(eng("@frontdesk ask BL-1: which browser?", n=8), store, FakeModels())
+    close(verified(), store)
+
+    posts = handle(msg("@frontdesk still broken", n=3), store, FakeModels())
+
+    assert posts[-1] == reply(messages.REOPENED.format(ticket_id="BL-1"), n=3)
+    assert store.get_ticket("BL-1").status == "open"  # type: ignore[union-attr]
+
+
+def test_a_message_that_is_not_a_bug_drops_the_unfinished_report(store: Store) -> None:
+    room_id = msg("x").room_id
+    handle(msg("@frontdesk share link broken"), store, FakeModels(bug(missing=["group_id"])))
+    assert store.get_draft(room_id, "u1") is not None
+
+    handle(msg("@frontdesk what does net mean?", n=2), store, FakeModels(kind("question")))
+
+    assert store.get_draft(room_id, "u1") is None
+
+
+def test_an_old_unfinished_report_is_not_continued(store: Store) -> None:
+    handle(msg("@frontdesk share link broken"), store, FakeModels(bug(missing=["group_id"])))
+    store.now[0] += config.DRAFT_MAX_AGE_S + 1  # type: ignore[attr-defined]
+    models = FakeModels(bug())
+
+    handle(msg("@frontdesk settle-up is a paisa short", n=2), store, models)
+
+    assert models.calls[0] == ("classify", "settle-up is a paisa short", None)
+
+
+def test_an_unexpected_model_error_still_gets_a_reply(store: Store) -> None:
+    posts = handle(msg("@frontdesk share link broken"), store, FakeModels(ValueError("bad JSON")))
+    assert posts == [reply(messages.SOMETHING_WRONG)]
+
+
+def test_a_rate_limited_duplicate_check_keeps_the_complete_report(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))  # an open ticket to check
+    models = FakeModels(bug())
+    models.duplicate_error = RateLimited("quota")
+
+    posts = handle(msg("@frontdesk group 1", user="u2", n=2), store, models)
+
+    assert posts == [reply(messages.RATE_LIMITED, n=2)]
+    draft = store.get_draft(msg("x").room_id, "u2")
+    assert draft is not None and draft.missing == [] and draft.report["group_id"] == "1"

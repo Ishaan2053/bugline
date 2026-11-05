@@ -90,6 +90,9 @@ REQUESTS_COMMAND = "requests"
 # One line per ticket (or request) plus a "+n more" line keeps a list under REPLY_MAX_LINES.
 STATUS_MAX_ROWS = REPLY_MAX_LINES - 2
 
+# An unfinished bug report older than this is dropped, so a new message starts a new report.
+DRAFT_MAX_AGE_S = 30 * 60
+
 
 # --- Switch (CLAUDE.md section 5) ---------------------------------------------------------------
 AGENT_NAME = PROJECT.agents["frontdesk"]
