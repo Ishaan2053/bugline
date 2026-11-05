@@ -50,6 +50,11 @@ front desk replies with the short line from CLAUDE.md and does not call the mode
   - `Not verified BL-<n>: <why>` from either of them: the ticket stays open, and the front desk
     says so in the thread.
   - Anyone else who names a ticket is told that only `@reproducer` or the room owner can close it.
+- `ask BL-<n>: <question>` from anyone in the room: post the question to the ticket's reporter in
+  `bugline-support`, in the thread of their report, and say in `bugline-eng` that it was asked.
+  The reporter's next message to the front desk is the answer: post it, as it is, in the thread
+  the question was asked in. No model call, and the rate guards do not apply to it. Only open
+  tickets can be asked about.
 - Any other message that addresses it gets one line saying what it does here, and nothing more.
   The front desk never instructs the fixer.
 

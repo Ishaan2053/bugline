@@ -343,3 +343,60 @@ def test_status_is_not_a_command_in_the_support_room(store: Store) -> None:
 def test_a_sentence_starting_with_status_is_not_the_command(store: Store) -> None:
     posts = handle(eng("@frontdesk status of the share link please"), store, FakeModels())
     assert posts == [Post(config.ROOM_ENG, messages.ENG_HELP, thread_id="m9")]
+
+
+def test_ask_reaches_the_reporter_and_the_answer_comes_back(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    handle(msg("@frontdesk me too", user="u2", n=2), store, FakeModels(bug(), duplicate="BL-1"))
+
+    posts = handle(eng("@frontdesk ask BL-1: which browser?", thread="t1"), store, FakeModels())
+
+    question = messages.QUESTION.format(name="Asha", ticket_id="BL-1", question="which browser?")
+    asked = messages.ASKED.format(name="Asha", room="bugline-support")
+    assert posts == [  # only the reporter is asked, in the thread of their report
+        Post(config.ROOM_SUPPORT, question, thread_id="m1"),
+        Post(config.ROOM_ENG, asked, thread_id="t1"),
+    ]
+    for _ in range(config.REPLIES_PER_MINUTE):  # Asha is at her cooldown limit
+        store.allow_model_reply("u1")
+
+    answer = handle(
+        msg("@frontdesk Firefox 130\non Windows", n=3, thread="m1"), store, FakeModels()
+    )
+
+    assert answer == [  # passed on as it is: no model call, no rate guard
+        Post(config.ROOM_ENG, "Asha answered pm's question on BL-1: Firefox 130; on Windows", "t1"),
+        Post(config.ROOM_SUPPORT, messages.ANSWER_PASSED, thread_id="m1"),
+    ]
+    store.now[0] += config.REPLY_WINDOW_S  # type: ignore[attr-defined]
+    models = FakeModels(kind("question"))
+    handle(msg("@frontdesk what does net mean?", n=4), store, models)
+    assert models.calls[0][0] == "classify"  # the question was answered once; back to normal
+
+
+def test_an_answer_naming_a_ticket_goes_to_that_tickets_question(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    handle(msg("@frontdesk another report", n=2), store, FakeModels(bug()))
+    handle(eng("@frontdesk ask BL-1: which browser?", thread="t1"), store, FakeModels())
+    handle(eng("@frontdesk ask BL-2 what amount?", thread="t2", n=10), store, FakeModels())
+
+    first = handle(msg("@frontdesk BL-2: 1000 rupees", n=3), store, FakeModels())[0]
+    second = handle(msg("@frontdesk Firefox", n=4), store, FakeModels())[0]
+
+    assert (first.thread_id, second.thread_id) == ("t2", "t1")
+    assert first.body.startswith("Asha answered pm's question on BL-2")
+
+
+@pytest.mark.parametrize(
+    ("setup", "expected"),
+    [
+        (False, messages.UNKNOWN_TICKET.format(ticket_id="BL-1")),
+        (True, messages.ASK_CLOSED.format(ticket_id="BL-1")),
+    ],
+)
+def test_ask_needs_an_open_ticket(store: Store, setup: bool, expected: str) -> None:
+    if setup:
+        handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+        close(verified(), store)
+    posts = handle(eng("@frontdesk ask BL-1: which browser?"), store, FakeModels())
+    assert posts == [Post(config.ROOM_ENG, expected, thread_id="m9")]

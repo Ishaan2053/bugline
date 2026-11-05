@@ -117,6 +117,9 @@ Seeded faults (planted on purpose; do not fix them unless the task explicitly sa
   writes) or the room owner by hand (`sender_role` is `owner`). `Not verified BL-n: <why>` → the
   ticket stays open. Anyone else naming a ticket → "only @reproducer or the room owner can close".
   Without the agent id, only the owner can close. `status` shows who closed each ticket.
+- **Ask the reporter:** `@frontdesk ask BL-n: <question>` in `#eng` posts the question to the
+  reporter's support thread; their next message to the front desk goes back, word for word, to
+  the eng thread it was asked in. No model call, no rate guard.
 - **Rate guards:** a user may have at most **5 open tickets**; beyond that the front desk replies
   "let's resolve the open ones first" and does not escalate. A per-user cooldown of 3 model-backed
   replies per minute; messages over the limit get a short "give me a minute" and are not sent to

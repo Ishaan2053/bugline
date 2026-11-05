@@ -349,6 +349,12 @@ One bug, fault 1 (the share link error), from report to fix, across both apps, a
    `@frontdesk status` in `bugline-eng` shows who closed each ticket.
    <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
 
+**Ask the reporter.** At any point the PM (or anyone in `bugline-eng`) can write
+`@frontdesk ask BL-1: which browser were you on?` in the ticket's thread. The front desk posts the
+question to the reporter in their Telegram thread, and the reporter's next message to it comes
+back into that Slack thread, word for word, with no model call. The PM and the reporter never
+share a chat app. (Not yet run live.)
+
 PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
 
 The quiet paths (a question answered from the user guide, a request, a vague report, a duplicate,
@@ -525,6 +531,8 @@ faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
   as managed agents instead; that path is not tested.
 - A role mention reaches a coder only while its program is running and holds the role. The front
   desk says so in the ticket's thread when `send_targeted_message` reports no live target.
+- After `ask`, the reporter's next message to the front desk is taken as the answer, wherever they
+  post it. Naming the ticket (`BL-2: ...`) picks which question it answers.
 - Feature requests are logged by the front desk, not handed over. Next step: show them to the PM.
 - The front desk runs on the Gemini free tier. It backs off on HTTP 429 and, if that fails, asks
   the user to send the message again rather than going quiet.

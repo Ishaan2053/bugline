@@ -68,6 +68,9 @@ OWNER_SENDER_ROLE = "owner"
 
 # "@frontdesk status" in the eng room lists tickets; "status BL-n" shows one.
 STATUS_COMMAND = "status"
+# "@frontdesk ask BL-n: <question>" in the eng room asks that ticket's reporter in the support room.
+ASK_COMMAND = "ask"
+
 # One line per ticket plus a "+n more" line keeps the board under REPLY_MAX_LINES.
 STATUS_MAX_ROWS = REPLY_MAX_LINES - 2
 
