@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from test_bootstrap import AGENT_IDS, FakeSwitch, make_layout
+from test_bootstrap import AGENT_IDS, ENG, EXTRA, FakeSwitch, make_layout
 
 import bootstrap
 import doctor
@@ -173,3 +173,31 @@ def test_local_checks_find_a_missing_clone(tmp_path: Path) -> None:
 @pytest.mark.parametrize("output", ['{"loggedIn": false}', None, "not json", "[]"])
 def test_claude_signed_out_or_unreadable_fails(output: str | None) -> None:
     assert not doctor.signed_in(output)
+
+
+class TwoSupportRooms(RunningSwitch):
+    """The running setup plus bugline-support-mattermost, linked from bugline-eng."""
+
+    def __init__(self, extra_live: bool) -> None:
+        super().__init__()
+        self.extra_live = extra_live
+        self.rooms.append(self.room_row(EXTRA, "bugline-support-mattermost", "mattermost"))
+
+    def read(self, path: str) -> object:
+        if path == f"/gateway/rooms/{ENG}/linked-rooms":
+            return [*super().read(path), {"target_room_id": EXTRA, "label": "supports"}]
+        if path == f"/gateway/rooms/{EXTRA}":
+            status = "live" if self.extra_live else "offline"
+            return {"agent_ids": ["a-fd"], "agent_statuses": {"a-fd": status}}
+        return super().read(path)
+
+
+@pytest.mark.parametrize("live", [True, False])
+def test_an_added_support_room_needs_the_front_desk_connected(
+    tmp_path: Path, capsys: pytest.CaptureFixture, live: bool
+) -> None:
+    ok, out = check(TwoSupportRooms(extra_live=live), tmp_path, capsys)
+
+    assert ok is live
+    state = "PASS" if live else "FAIL"
+    assert f"{state} bugline-frontdesk connected to bugline-support-mattermost" in out

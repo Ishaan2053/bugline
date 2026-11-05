@@ -11,6 +11,7 @@ import pytest
 import bootstrap
 
 SUPPORT, ENG, REF, PKG = "room-support", "room-eng", "ref-1", "pkg-1"
+EXTRA = "room-support-mm"  # a second support room, made by --add-support mattermost
 KIT = bootstrap.KIT_NAME  # the kit of the setup the fake server holds
 AGENT_IDS = {"bugline-frontdesk": "a-fd", "bugline-repro": "a-repro", "bugline-fixer": "a-fixer"}
 ROLES = {"bugline-frontdesk": "frontdesk", "bugline-repro": "reproducer", "bugline-fixer": "fixer"}
@@ -90,7 +91,9 @@ class FakeSwitch:
         if method == "POST" and path == "/gateway/rooms/from-yaml":
             body = json.loads(request.content)
             self.templates.append(body)
-            room_id = SUPPORT if body["inputs"]["room"] == "bugline-support" else ENG
+            room_id = {"bugline-support": SUPPORT, "bugline-support-mattermost": EXTRA}.get(
+                body["inputs"]["room"], ENG
+            )
             return httpx.Response(201, json={"room_id": room_id})
         if method == "POST" and path == "/gateway/api-keys":
             return httpx.Response(201, json={"id": "k", "label": "x", "key": "reg-secret"})
@@ -187,6 +190,7 @@ def make_layout(tmp_path: Path, registered: bool) -> bootstrap.Layout:
         verifier_id_var="SWITCH_REPRODUCER_AGENT_ID",
         frontdesk_name_var="FRONTDESK_AGENT_NAME",
         escalation_link="escalates to",
+        support_link="supports",
     )
 
 
@@ -280,6 +284,34 @@ def test_mattermost_only_creates_both_rooms_from_the_templates(
     out = capsys.readouterr().out
     assert "bugline-support on Mattermost: created from the template" in out
     assert "bugline-support (Mattermost) and bugline-eng (Mattermost)" in out
+
+
+def test_add_support_makes_a_second_support_room_linked_like_the_first(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    fake = FakeSwitch(finished=True, bridges=("telegram", "slack", "mattermost"))
+    layout = make_layout(tmp_path, registered=True)
+    env_before = layout.frontdesk_env.read_text()
+    run(fake, layout, False, "--add-support", "mattermost")
+
+    [extra] = fake.templates
+    assert extra["yaml"] == bootstrap.TEMPLATES["support"].read_text(encoding="utf-8")
+    assert extra["inputs"] == {
+        "room": "bugline-support-mattermost",
+        "bridge": "Mattermost",
+        "frontdesk": "bugline-frontdesk",
+    }
+    writes = fake.writes()
+    # Linked both ways, the front desk in it with its alias, and the kit attached.
+    assert writes.count(("POST", f"/gateway/rooms/{EXTRA}/linked-rooms")) == 1
+    assert writes.count(("POST", f"/gateway/rooms/{ENG}/linked-rooms")) == 1
+    assert ("POST", f"/gateway/rooms/{EXTRA}/agents") in writes
+    assert ("POST", f"/gateway/rooms/{EXTRA}/packages/{PKG}") in writes
+    assert ("PATCH", f"/gateway/rooms/{EXTRA}") in writes  # its instructions
+    assert layout.frontdesk_env.read_text() == env_before  # found through the link, not .env
+    out = capsys.readouterr().out
+    assert "bugline-eng -> bugline-support-mattermost 'supports': created" in out
+    assert "bugline-support (Telegram), bugline-support-mattermost (Mattermost) and" in out
 
 
 def test_default_bridges_stop_on_a_mattermost_only_server(tmp_path: Path) -> None:
