@@ -25,6 +25,19 @@ def rate_limited() -> errors.ClientError:
     )
 
 
+def overloaded() -> errors.ServerError:
+    """The error the SDK raises for HTTP 503, as Gemini sent it live on Nov 5."""
+    message = "This model is currently experiencing high demand."
+    return errors.ServerError(
+        503, {"error": {"code": 503, "message": message, "status": "UNAVAILABLE"}}
+    )
+
+
+def server_error() -> errors.ServerError:
+    """HTTP 500: not in RETRY_STATUSES, so it is raised at once."""
+    return errors.ServerError(500, {"error": {"code": 500, "message": "x", "status": "INTERNAL"}})
+
+
 class FakeClient:
     """Replays queued replies (raising the ones that are exceptions) and records each request."""
 

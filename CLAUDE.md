@@ -268,8 +268,8 @@ bugline/
   The report fields are always in English, whatever language the user wrote in.
   The duplicate check is a second, separate lite-model call returning
   `{duplicate_of: "BL-n" | null, confidence: number}`; treat confidence under 0.7 as no match.
-- Exponential backoff on HTTP 429 (start 2 s, cap 30 s, 5 tries), then post "I'm rate-limited
-  right now. Please send that again in a minute" rather than failing silently. The agent does not
+- Exponential backoff on HTTP 429 and 503 (start 2 s, cap 30 s, 5 tries), then post "I'm
+  rate-limited right now. Please send that again in a minute" rather than failing silently. The agent does not
   retry on its own.
 - Log every model call to `agents/frontdesk/calls.log` (timestamp, model, tokens). We quote these
   numbers in the blog. Target under 25 calls per full loop.
