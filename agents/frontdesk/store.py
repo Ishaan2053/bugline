@@ -1,5 +1,5 @@
-"""The front desk's memory: tickets, subscribers, questions, drafts, requests, muted threads and
-rate guards.
+"""The front desk's memory: tickets, subscribers, questions, languages, drafts, requests, muted
+threads and rate guards.
 
 One SQLite file (stdlib `sqlite3`) so the agent survives restarts without a database server.
 The two rate guards live here because they must be checked before any model call, and they need
@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS questions (
     eng_thread_id TEXT NOT NULL,
     asked_at      TEXT NOT NULL,
     answered_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS languages (
+    user_id  TEXT PRIMARY KEY,
+    language TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS reply_log (
     user_id TEXT NOT NULL,
@@ -335,6 +339,23 @@ class Store:
             self._db.execute(
                 "UPDATE questions SET answered_at = ? WHERE id = ?", (self._iso_now(), question_id)
             )
+
+    # --- languages ------------------------------------------------------------------------------
+
+    def set_language(self, user_id: str, language: str) -> None:
+        """Remember the language a user last wrote in, so later replies to them use it too."""
+        with self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO languages (user_id, language) VALUES (?, ?)",
+                (user_id, language),
+            )
+
+    def language(self, user_id: str) -> str:
+        """The user's language, TEAM_LANGUAGE until a classification says otherwise."""
+        row = self._db.execute(
+            "SELECT language FROM languages WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        return row["language"] if row else config.TEAM_LANGUAGE
 
     # --- drafts ---------------------------------------------------------------------------------
 

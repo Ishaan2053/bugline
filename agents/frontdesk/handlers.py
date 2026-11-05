@@ -5,6 +5,7 @@ returns `Post` actions that agent.py carries out. That keeps every rule from CLA
 ("Front-desk filtering rules") testable with a fake model and an in-memory store.
 """
 
+import logging
 import re
 from collections.abc import Collection, Sequence
 from dataclasses import asdict, dataclass
@@ -18,6 +19,8 @@ import config
 import messages
 from classify import Classification, RateLimited, Report
 from store import Draft, Question, Store, Ticket
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,13 +40,15 @@ class Post:
 
 
 class Models(Protocol):
-    """The three model calls handlers need. The classify module is the real implementation."""
+    """The model calls handlers need. The classify module is the real implementation."""
 
     def classify(self, message: str, draft: Draft | None = None) -> Classification: ...
 
     def check_duplicate(self, report: Report, open_tickets: Sequence[Ticket]) -> str | None: ...
 
     def answer_question(self, question: str) -> str: ...
+
+    def translate(self, text: str, language: str) -> str: ...
 
 
 # The whole of an eng message after the mentions: "status" or "status BL-n", any case.
@@ -69,12 +74,29 @@ def handle(
     agent.py looks them up at start.
     """
     if msg.room == config.ROOM_ENG:
-        return _handle_eng(msg, store, verifiers)
+        return _handle_eng(msg, store, verifiers, models)
     return _handle_support(msg, store, models)
 
 
 def _reply(msg: IncomingMessage, body: str) -> Post:
     return Post(msg.room, body, thread_id=msg.thread_root)
+
+
+def _in_language(text: str, user_id: str, store: Store, models: Models) -> str:
+    """`text` in the language `user_id` writes in. If translating fails, the English text."""
+    language = store.language(user_id)
+    if language == config.TEAM_LANGUAGE:
+        return text
+    try:
+        return models.translate(text, language)
+    except Exception:  # a reply in English beats no reply
+        log.warning("could not translate a reply into %s; sending it in English", language)
+        return text
+
+
+def _say(msg: IncomingMessage, body: str, store: Store, models: Models) -> Post:
+    """A reply to the sender in the support room, in their language."""
+    return _reply(msg, _in_language(body, msg.sender_id, store, models))
 
 
 def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[Post]:
@@ -90,12 +112,12 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
         store.pending_question(msg.sender_id, msg.room_id) if ticket_id else None
     )
     if question:
-        return _pass_answer(msg, text, question, store)
+        return _pass_answer(msg, text, question, store, models)
     # "still broken" from someone waiting on a closed ticket: reopen it, again with no model call.
     if config.REOPEN_RE.search(text):
         closed = store.closed_ticket_of(msg.sender_id, ticket_id)
         if closed and store.reopen_ticket(closed.ticket_id):
-            return _reopen(msg, text, closed)
+            return _reopen(msg, text, closed, store, models)
     if store.too_many_open_tickets(msg.sender_id):
         return [_reply(msg, messages.TOO_MANY_OPEN)]
     if not store.allow_model_reply(msg.sender_id):
@@ -108,14 +130,15 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
 
 def _route(msg: IncomingMessage, text: str, store: Store, models: Models) -> list[Post]:
     result = models.classify(text, store.get_draft(msg.room_id, msg.sender_id))
-    if result.kind == "question":
+    store.set_language(msg.sender_id, result.language)
+    if result.kind == "question":  # the answer prompt replies in the question's language
         return [_reply(msg, models.answer_question(text))]
     if result.kind == "request":
         store.log_request(msg.sender_id, msg.room_id, text, msg.sender_name)
-        return [_reply(msg, messages.REQUEST_LOGGED)]
+        return [_say(msg, messages.REQUEST_LOGGED, store, models)]
     if result.kind == "off-topic":
         store.mute(msg.room_id, msg.thread_root)
-        return [_reply(msg, messages.OFF_TOPIC)]
+        return [_say(msg, messages.OFF_TOPIC, store, models)]
     return _bug(msg, result, store, models)
 
 
@@ -123,13 +146,13 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
     report = result.report
     if result.missing:
         store.save_draft(msg.room_id, msg.sender_id, asdict(report), result.missing)
-        return [_reply(msg, messages.ask_missing(result.missing))]
+        return [_say(msg, messages.ask_missing(result.missing), store, models)]
     store.clear_draft(msg.room_id, msg.sender_id)
 
     duplicate_of = models.check_duplicate(report, store.open_tickets())
     if duplicate_of:
         store.subscribe(duplicate_of, msg.sender_id, msg.room_id, msg.sender_name, msg.thread_root)
-        return [_reply(msg, messages.TRACKED.format(ticket_id=duplicate_of))]
+        return [_say(msg, messages.TRACKED.format(ticket_id=duplicate_of), store, models)]
 
     ticket_id = store.open_ticket(
         msg.sender_id,
@@ -140,24 +163,35 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
         asdict(report),
         thread_id=msg.thread_root,
     )
-    escalate = _to_reproducer(messages.escalation(ticket_id, report, msg.sender_name), ticket_id)
-    return [escalate, _reply(msg, messages.ESCALATED.format(ticket_id=ticket_id))]
+    body = messages.escalation(ticket_id, report, msg.sender_name, result.language)
+    escalate = _to_reproducer(body, ticket_id)
+    return [escalate, _say(msg, messages.ESCALATED.format(ticket_id=ticket_id), store, models)]
 
 
-def _pass_answer(msg: IncomingMessage, text: str, question: Question, store: Store) -> list[Post]:
-    """Post the reporter's answer in the eng thread the question was asked in."""
+def _pass_answer(
+    msg: IncomingMessage, text: str, question: Question, store: Store, models: Models
+) -> list[Post]:
+    """Post the reporter's answer in the eng thread the question was asked in, in TEAM_LANGUAGE."""
     store.mark_answered(question.id)
+    if store.language(msg.sender_id) != config.TEAM_LANGUAGE:
+        try:
+            text = models.translate(text, config.TEAM_LANGUAGE)
+        except Exception:
+            log.warning("could not translate an answer; passing it on as written")
     body = messages.answer(msg.sender_name, question.asked_by, question.ticket_id, text)
     return [
         Post(config.ROOM_ENG, body, thread_id=question.eng_thread_id),
-        _reply(msg, messages.ANSWER_PASSED),
+        _say(msg, messages.ANSWER_PASSED, store, models),
     ]
 
 
-def _reopen(msg: IncomingMessage, text: str, ticket: Ticket) -> list[Post]:
+def _reopen(
+    msg: IncomingMessage, text: str, ticket: Ticket, store: Store, models: Models
+) -> list[Post]:
     """Hand a reopened ticket back to the reproducer, the same way as a new one."""
     escalate = _to_reproducer(messages.reopened(ticket, msg.sender_name, text), ticket.ticket_id)
-    return [escalate, _reply(msg, messages.REOPENED.format(ticket_id=ticket.ticket_id))]
+    confirm = _say(msg, messages.REOPENED.format(ticket_id=ticket.ticket_id), store, models)
+    return [escalate, confirm]
 
 
 def _to_reproducer(body: str, ticket_id: str) -> Post:
@@ -174,7 +208,9 @@ def _to_reproducer(body: str, ticket_id: str) -> Post:
     )
 
 
-def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) -> list[Post]:
+def _handle_eng(
+    msg: IncomingMessage, store: Store, verifiers: Collection[str], models: Models
+) -> list[Post]:
     """In eng the front desk shows the ticket board, asks reporters, and closes verified tickets.
 
     `status` lists tickets and `status BL-n` shows one. `requests` lists feature requests.
@@ -192,7 +228,8 @@ def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) 
         return [_reply(msg, board)]
     ask = ASK_RE.fullmatch(text)
     if ask:
-        return _ask_reporter(msg, store, config.format_ticket_id(int(ask.group(1))), ask.group(2))
+        ticket_id = config.format_ticket_id(int(ask.group(1)))
+        return _ask_reporter(msg, store, models, ticket_id, ask.group(2))
     if not config.TICKET_ID_RE.search(msg.body):
         return [_reply(msg, messages.ENG_HELP)]
     if not _may_close(msg, verifiers):
@@ -212,7 +249,14 @@ def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) 
     notices = [
         Post(
             config.ROOM_SUPPORT,
-            messages.FIXED.format(name=s.name or "Hello", ticket_id=ticket_id, pr_url=pr.group(0)),
+            _in_language(
+                messages.FIXED.format(
+                    name=s.name or "Hello", ticket_id=ticket_id, pr_url=pr.group(0)
+                ),
+                s.user_id,
+                store,
+                models,
+            ),
             thread_id=s.thread_id,
         )
         for s in subscribers
@@ -220,7 +264,9 @@ def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) 
     return [_reply(msg, messages.CLOSED.format(ticket_id=ticket_id)), *notices]
 
 
-def _ask_reporter(msg: IncomingMessage, store: Store, ticket_id: str, question: str) -> list[Post]:
+def _ask_reporter(
+    msg: IncomingMessage, store: Store, models: Models, ticket_id: str, question: str
+) -> list[Post]:
     """Ask the ticket's reporter in their support thread; their next message comes back here.
 
     Anyone in the eng room may ask, people and agents: the room is already the team's.
@@ -237,7 +283,12 @@ def _ask_reporter(msg: IncomingMessage, store: Store, ticket_id: str, question: 
     return [
         Post(
             config.ROOM_SUPPORT,
-            messages.QUESTION.format(name=name, ticket_id=ticket_id, question=question.strip()),
+            _in_language(
+                messages.QUESTION.format(name=name, ticket_id=ticket_id, question=question.strip()),
+                reporter.user_id,
+                store,
+                models,
+            ),
             thread_id=reporter.thread_id,
         ),
         _reply(msg, messages.ASKED.format(name=name, room=config.ROOM_NAMES[config.ROOM_SUPPORT])),

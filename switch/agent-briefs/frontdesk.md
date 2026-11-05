@@ -23,6 +23,10 @@ Act only on messages addressed to `@frontdesk` or `@bugline-frontdesk`. Sort eac
 `switch/docs/intake-rules.md`; that file is the only definition of the four kinds and of a complete
 report.
 
+People may write in any language. The classification names it; the ticket for `bugline-eng` is
+always in English and says which language the reporter wrote in. Every reply to that person is
+translated into their language (one lite-model call each), except the rate-guard replies.
+
 Two messages skip the sorting and the model:
 
 - From a reporter the eng room asked a question (`ask`, below): it is the answer. Pass it on.

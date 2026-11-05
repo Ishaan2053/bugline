@@ -133,3 +133,19 @@ def test_live_classify() -> None:
     )
     print(f"\nlive classification: {result}")
     assert result.kind == "bug"
+
+
+def test_classify_reads_the_language_and_asks_for_the_report_in_english(fake) -> None:
+    fake.replies = [ok({**BUG, "language": "Hindi"})]
+    assert classify.classify("share link kaam nahi kar raha").language == "Hindi"
+    assert "Write every `report` field in English" in fake.requests[0]["contents"]
+    fake.replies = [ok(BUG)]  # an answer without the field counts as the team's language
+    assert classify.classify("the share link gives an error").language == config.TEAM_LANGUAGE
+
+
+def test_translate_uses_the_lite_model(fake) -> None:
+    fake.replies = [ok("BL-1 ठीक हो गया")]
+    assert classify.translate("BL-1 is fixed", "Hindi") == "BL-1 ठीक हो गया"
+    request = fake.requests[0]
+    assert request["model"] == config.MODEL_LITE
+    assert "into Hindi" in request["contents"] and "BL-1 is fixed" in request["contents"]

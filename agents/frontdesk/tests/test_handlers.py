@@ -28,6 +28,7 @@ class FakeModels:
     def __init__(self, *results: Classification | Exception, duplicate: str | None = None):
         self.results = list(results)
         self.duplicate = duplicate
+        self.translate_error: Exception | None = None
         self.calls: list[tuple] = []
 
     def classify(self, message: str, draft: Draft | None = None) -> Classification:
@@ -44,6 +45,12 @@ class FakeModels:
     def answer_question(self, question: str) -> str:
         self.calls.append(("answer", question))
         return "Net is paid minus owes."
+
+    def translate(self, text: str, language: str) -> str:
+        self.calls.append(("translate", language))
+        if self.translate_error:
+            raise self.translate_error
+        return f"[{language}] {text}"
 
 
 def bug(missing: Sequence[str] = (), report: Report = COMPLETE) -> Classification:
@@ -462,3 +469,60 @@ def test_no_fixed_reply_addresses_an_agent() -> None:
     fixed_texts = [v for k, v in vars(messages).items() if k.isupper() and isinstance(v, str)]
     roles = [f"@{role}" for role in (config.REPRODUCER_ROLE, "fixer", "frontdesk")]
     assert [t for t in fixed_texts if any(role in t for role in roles)] == []
+
+
+def hindi_bug(missing: Sequence[str] = ()) -> Classification:
+    return Classification("bug", list(missing), COMPLETE, language="Hindi")
+
+
+def test_a_hindi_reporter_gets_replies_in_hindi_and_eng_gets_english(store: Store) -> None:
+    models = FakeModels(hindi_bug())
+    escalate, confirm = handle(msg("@frontdesk share link kaam nahi kar raha"), store, models)
+
+    assert escalate.body.splitlines()[:2] == [  # the report itself is in English
+        "BL-1: Share link returns an error",
+        "Reporter: Asha (bugline-support, wrote in Hindi)",
+    ]
+    assert confirm.body == "[Hindi] " + messages.ESCALATED.format(ticket_id="BL-1")
+    handle(msg("@frontdesk me too", user="u2", n=2), store, FakeModels(bug(), duplicate="BL-1"))
+
+    closing = FakeModels()
+    _, asha, ravi = close_with(verified(), store, closing)
+
+    assert asha.body == "[Hindi] " + fixed("Asha")
+    assert ravi.body == fixed("Ravi")  # Ravi wrote in English
+    assert closing.calls == [("translate", "Hindi")]
+
+
+def close_with(message: IncomingMessage, store: Store, models: FakeModels) -> list[Post]:
+    return handle(message, store, models, verifiers=VERIFIERS)
+
+
+def test_ask_and_answer_cross_languages(store: Store) -> None:
+    handle(msg("@frontdesk share link kaam nahi kar raha", n=1), store, FakeModels(hindi_bug()))
+    asking = FakeModels()
+    question = handle(eng("@frontdesk ask BL-1: which browser?", thread="t1"), store, asking)[0]
+    assert question.body.startswith("[Hindi] Asha, the team has a question about BL-1")
+
+    answering = FakeModels()
+    relay, thanks = handle(msg("@frontdesk Chrome", n=2), store, answering)
+
+    assert relay.body == "Asha answered pm's question on BL-1: [English] Chrome"
+    assert thanks.body == "[Hindi] " + messages.ANSWER_PASSED
+    assert [c[1] for c in answering.calls] == ["English", "Hindi"]
+
+
+def test_a_failed_translation_sends_english(store: Store) -> None:
+    models = FakeModels(hindi_bug(["group_id"]))
+    models.translate_error = RateLimited("quota")
+    (ask,) = handle(msg("@frontdesk share link kaam nahi kar raha"), store, models)
+    assert ask.body == messages.ask_missing(["group_id"])
+
+
+def test_rate_guard_replies_are_never_translated(store: Store) -> None:
+    store.set_language("u1", "Hindi")
+    for _ in range(config.REPLIES_PER_MINUTE):
+        store.allow_model_reply("u1")
+    models = FakeModels()
+    assert handle(msg("@frontdesk hello"), store, models) == [reply(messages.COOLDOWN)]
+    assert models.calls == []

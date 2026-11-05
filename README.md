@@ -357,6 +357,11 @@ question to the reporter in their Telegram thread, and the reporter's next messa
 back into that Slack thread, word for word, with no model call. The PM and the reporter never
 share a chat app. (Not yet run live.)
 
+**Any language.** A reporter can write in Hindi, Hinglish or any other language. On Nov 5, `sam`
+wrote "bhai share link kholte hi error aa raha hai"; the front desk asked for the group id in
+Hinglish, and `BL-4` reached Slack in English with "Reporter: sam (bugline-support, wrote in
+Hinglish)". Each translated reply costs one lite-model call (`translate` in `calls.log`).
+
 PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
 
 The quiet paths (a question answered from the user guide, a request, a vague report, a duplicate,
