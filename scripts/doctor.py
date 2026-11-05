@@ -106,6 +106,14 @@ def switch_checks(gw: Gateway, layout: Layout, email: str, password: str) -> Ite
     for key, specs in room_members(layout).items():
         yield from room_checks(gw, layout.room_names[key], rooms.get(ids[key]), specs, agent_ids)
     yield link_check(gw, layout, ids)
+    # Support rooms beyond the one in .env (bootstrap --add-support): the front desk finds them
+    # through bugline-eng's links, so it must be in each and connected.
+    for row in gw.get(f"/rooms/{ids['eng']}/linked-rooms") or []:
+        extra = row.get("target_room_id")
+        if row.get("label") == layout.support_link and extra != ids["support"]:
+            room = rooms.get(extra)
+            name = (room or {}).get("name", extra)
+            yield from room_checks(gw, name, room, layout.agents[:1], agent_ids)
     yield from kit_checks(gw)
     creds = {}
     for spec in layout.agents:

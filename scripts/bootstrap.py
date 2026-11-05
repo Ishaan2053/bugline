@@ -44,6 +44,7 @@ import importlib.util
 import json
 import os
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -73,9 +74,6 @@ TEMPLATES = {
 TEMPLATE_INPUTS = {"support": {}, "eng": {"repo_url": PROJECT.repo_web}}
 APP_DIR = PROJECT.app_dir  # in each coder's clone: the app, its tests and its venv
 INSTRUCTIONS = {key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for key in ROOM_KEYS}
-# The eng room's link back to the support room. The support room's link to eng is the front
-# desk's ESCALATION_LINK (Layout.escalation_link): the front desk sends reports where it points.
-SUPPORTS_LINK = "supports"
 FRONTDESK_ALIAS = "frontdesk"  # both templates give this alias
 REFERENCE_NAME = "bugline-repo"  # made by the template's `references:`
 # Named after the project, so a second project on the same server gets its own kit and documents.
@@ -140,6 +138,7 @@ class Layout:
     verifier_id_var: str  # front desk: the reproducer's agent id, whose Verified closes a ticket
     frontdesk_name_var: str  # coders: the front desk's agent name, where verdicts go
     escalation_link: str  # label of the support -> eng link the front desk sends reports by
+    support_link: str  # label of each eng -> support link; the front desk serves those rooms
 
 
 def _load(name: str, path: Path) -> ModuleType:
@@ -183,6 +182,7 @@ def load_layout() -> Layout:
         verifier_id_var=frontdesk.VERIFIER_AGENT_ID_ENV,
         frontdesk_name_var=coder.FRONTDESK_AGENT_NAME_ENV,
         escalation_link=frontdesk.ESCALATION_LINK,
+        support_link=frontdesk.SUPPORT_LINK,
     )
 
 
@@ -456,7 +456,7 @@ def write_env_files(
 ) -> None:
     to_frontdesk, to_coders = handoff_env(layout, agent_ids)
     frontdesk = {layout.api_url_var: api_url}
-    frontdesk |= {layout.frontdesk_room_vars[key]: room_ids[key] for key in room_ids}
+    frontdesk |= {var: room_ids[key] for key, var in layout.frontdesk_room_vars.items()}
     frontdesk |= to_frontdesk
     coder = {layout.api_url_var: api_url, layout.coder_eng_room_var: room_ids["eng"], **to_coders}
     for label, path, values in (
@@ -510,9 +510,13 @@ def ensure_instructions(gw: Gateway, room: str, room_id: str, path: Path, text: 
     say(f"{room} instructions", gw.done(f"updated from {path.relative_to(REPO_ROOT)}"))
 
 
-def room_links(layout: Layout) -> list[tuple[str, str, str]]:
-    """(source room key, target room key, label) for each link between the two rooms."""
-    return [("support", "eng", layout.escalation_link), ("eng", "support", SUPPORTS_LINK)]
+def room_links(layout: Layout, support_keys: Iterable[str]) -> list[tuple[str, str, str]]:
+    """(source room key, target room key, label) for each link: every support room escalates to
+    bugline-eng, and bugline-eng supports each of them."""
+    links = []
+    for key in support_keys:
+        links += [(key, "eng", layout.escalation_link), ("eng", key, layout.support_link)]
+    return links
 
 
 def ensure_link(
@@ -634,10 +638,12 @@ class Options:
     # the display name of the connection to use when there are several of that type.
     bridge_types: dict[str, str | None]
     connections: dict[str, str | None]
+    # Chat apps that get one more support room each (--add-support), e.g. ("mattermost",).
+    extra_support: tuple[str, ...] = ()
 
 
 def run(gw: Gateway, layout: Layout, opts: Options) -> None:
-    names = layout.room_names
+    names = dict(layout.room_names)
     kinds = {key: opts.bridge_types.get(key) or kind for key, kind in layout.bridge_types.items()}
     print("1. Server")
     gw.check_health()
@@ -662,6 +668,20 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
         bridge = pick_bridge(bridges, kinds[key], opts.connections.get(key), flag)
         roles = {spec.role: spec.name for spec in members[key]}
         room_ids[key] = ensure_room(gw, key, wanted[key], bridge, rooms, roles)
+    # One more support room per --add-support app, made like the first from its template. The
+    # front desk finds it at start through bugline-eng's link, so no .env changes.
+    support_keys = ["support"]
+    for kind in opts.extra_support:
+        key = f"support-{kind}"
+        names[key], kinds[key], members[key] = (
+            f"{names['support']}-{kind}",
+            kind,
+            members["support"],
+        )
+        bridge = pick_bridge(bridges, kind, None, "--add-support")
+        roles = {spec.role: spec.name for spec in members[key]}
+        room_ids[key] = ensure_room(gw, "support", names[key], bridge, rooms, roles)
+        support_keys.append(key)
 
     print("6. Agent settings files")
     write_env_files(layout, opts.api_url, room_ids, agent_ids, opts.dry_run)
@@ -675,9 +695,11 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
 
     print("9. Room instructions, links and aliases")
     for key, room_id in room_ids.items():
-        text = instructions_text(key, kinds)
-        ensure_instructions(gw, names[key], room_id, INSTRUCTIONS[key], text)
-    for link in room_links(layout):
+        # An extra support room has the support room's rules, naming its own chat app.
+        base = "support" if key in support_keys else key
+        text = instructions_text(base, kinds | {base: kinds[key]})
+        ensure_instructions(gw, names[key], room_id, INSTRUCTIONS[base], text)
+    for link in room_links(layout, support_keys):
         ensure_link(gw, names, room_ids, link)
     frontdesk = layout.agents[0]
     creds = load_credentials(frontdesk.credentials) if frontdesk.credentials.is_file() else None
@@ -688,8 +710,8 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
     ensure_kit(gw, names, room_ids)
 
     print("11. Still by hand")
-    support, eng = (f"{names[key]} ({app_name(kinds[key])})" for key in ROOM_KEYS)
-    print(f"  - Type `!follow-ups off` in {support} and {eng}.")
+    rooms_by_hand = [f"{names[key]} ({app_name(kinds[key])})" for key in [*support_keys, "eng"]]
+    print(f"  - Type `!follow-ups off` in {', '.join(rooms_by_hand[:-1])} and {rooms_by_hand[-1]}.")
     print("  - Start the three agents, each in its own terminal (README, 'Reproduce it', part B):")
     print("      cd agents\\frontdesk; .\\.venv\\Scripts\\python agent.py")
     print(
@@ -726,6 +748,7 @@ def flag_options(args: argparse.Namespace, api_url: str, email: str, password: s
         bool(args.dry_run),
         bridge_types={key: getattr(args, f"{key}_bridge") for key in ROOM_KEYS},
         connections={key: getattr(args, f"{key}_connection") for key in ROOM_KEYS},
+        extra_support=tuple(getattr(args, "add_support", None) or ()),
     )
 
 
@@ -745,6 +768,12 @@ def build_parser() -> argparse.ArgumentParser:
             f"--{key}-connection",
             help=f"display name of the {key} room's connection, if that app has several",
         )
+    parser.add_argument(
+        "--add-support",
+        action="append",
+        metavar="APP",
+        help="one more support room on this chat app (mattermost, slack, ...); repeatable",
+    )
     # The old name, from when bugline-eng could only be on Slack.
     parser.add_argument(
         "--slack-connection", dest="eng_connection", deprecated=True, help="use --eng-connection"
