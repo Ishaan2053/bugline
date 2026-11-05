@@ -454,3 +454,11 @@ def test_requests_lists_what_the_support_room_asked_for(store: Store) -> None:
         "#2 · 0 min · Ravi: dark mode; please\n#1 · 2 h · Asha: please add CSV export",
         thread_id="m9",
     )
+
+
+def test_no_fixed_reply_addresses_an_agent() -> None:
+    # A role mention in a reply wakes that agent: the live refusal once started a reproducer run.
+    # Only the escalation and the reopen address @reproducer, on purpose.
+    fixed_texts = [v for k, v in vars(messages).items() if k.isupper() and isinstance(v, str)]
+    roles = [f"@{role}" for role in (config.REPRODUCER_ROLE, "fixer", "frontdesk")]
+    assert [t for t in fixed_texts if any(role in t for role in roles)] == []

@@ -58,12 +58,14 @@ NOT_OPEN = "{ticket_id} is not an open ticket, so there is nothing to close."
 # The close line, as the reproducer posts it (switch/docs/repro-checklist.md, "Verify a fix").
 _CLOSE_LINE = f"`Verified {TICKET_PREFIX}-n: <PR link>`"
 ENG_HELP = (
-    f"I bring bug reports here and close them when @{REPRODUCER_ROLE} posts {_CLOSE_LINE}."
+    f"I bring bug reports here and close them when the {REPRODUCER_ROLE} posts {_CLOSE_LINE}."
     f" `{STATUS_COMMAND}` lists the tickets, `{STATUS_COMMAND} {TICKET_PREFIX}-n` shows one,"
     f" `{ASK_COMMAND} {TICKET_PREFIX}-n: <question>` asks its reporter,"
     f" `{REQUESTS_COMMAND}` lists feature requests."
 )
-NOT_VERIFIER = f"Only @{REPRODUCER_ROLE} or the room owner can close a ticket, with {_CLOSE_LINE}."
+NOT_VERIFIER = (
+    f"Only the {REPRODUCER_ROLE} or the room owner can close a ticket, with {_CLOSE_LINE}."
+)
 CLOSE_FORMAT = f"To close a ticket, post {_CLOSE_LINE} with the full PR link."
 STAYS_OPEN = "{ticket_id} stays open. PM, the reason is in this thread; you decide what is next."
 NO_TICKETS = "No tickets yet."
