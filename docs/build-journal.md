@@ -239,3 +239,11 @@ the front desk took the eng room from `.env` and the rules from the repo.
   Switch's ids for chat-app people (`ExternalUser`), not Slack member ids, so bootstrap looks them
   up through the connection's users list.
 - Not yet run live: the server was stopped after the crash.
+- After the server restart, all live on `main`: `reset_demo.py` cleared the replayed `BL-1`.
+  `bootstrap.py --add-support mattermost` made `bugline-support-mattermost` in one run, and a
+  second run changed nothing. The front desk logged `support rooms: Bugline Telegram:
+  bugline-support, bugline-support-mattermost` and connected to both. `doctor.py`: 32 PASS.
+  A fresh message was answered, so the 30-minute guard reads Switch's timestamp in the right unit.
+  Admin reported fault 1 in Telegram (`BL-1`), and `sam`'s Mattermost duplicate was matched to
+  it. 78 s from approval to "BL-1 is fixed" in both apps (PR #61, closed by the reset).
+  Approvers are still not run live: they need a real second Slack account.

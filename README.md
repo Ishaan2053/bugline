@@ -148,7 +148,11 @@ Hinglish)". Each translated reply costs one lite-model call (`translate` in `cal
 `bugline-support-mattermost` from the support template and links it to `bugline-eng` like the
 first. The front desk finds it at start through `bugline-eng`'s "supports" link. A Mattermost user
 who reports a bug already open from Telegram is subscribed to the same ticket, and on the close
-each reporter hears in their own app. Unit-tested; not yet run live.
+each reporter hears in their own app. Run live on Nov 6: Admin reported fault 1 in Telegram
+(`BL-1`, "Reporter: Admin (Bugline Telegram: bugline-support)"), and `sam`'s report of the same
+bug in Mattermost got "Already tracked as BL-1", with nothing new in Slack. After the PM's
+approval, fixer PR, reproducer `Verified` and close took 78 s, and "BL-1 is fixed" went to Admin
+in Telegram and to `sam` in Mattermost, each in their own thread.
 
 **More approvers.** `approvers = ["sam.k"]` in `bugline.toml` `[rooms]` (usernames on the eng
 room's chat app) and one bootstrap run let `sam.k` tell `@fixer` to go as well, still only in
