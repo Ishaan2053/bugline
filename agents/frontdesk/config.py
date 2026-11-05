@@ -116,6 +116,12 @@ ROOM_ID_ENVS = {ROOM_SUPPORT: "SWITCH_SUPPORT_ROOM_ID", ROOM_ENG: "SWITCH_ENG_RO
 # The label of the support room's link to the eng room (scripts/bootstrap.py makes it). Reports go
 # where this link points, so the link in Switch, not a room id in .env, decides where they go.
 ESCALATION_LINK = "escalates to"
+# The label of each link from the eng room back to a support room (bootstrap makes them). The
+# front desk serves every support room the eng room links to this way, on any chat app.
+SUPPORT_LINK = "supports"
+# Support room id -> its name in Switch, for the eng room's tickets ("Reporter: Asha (<room>)").
+# agent.py fills it at start from the eng room's SUPPORT_LINK links.
+support_rooms: dict[str, str] = {}
 # The chat app each room is on, as Switch names its connection types ("bridge_type"). Only
 # scripts/bootstrap.py reads it, to pick the connection. bugline.toml gives the default, these
 # env vars override it, and bootstrap's flags override both.
@@ -136,6 +142,11 @@ def switch_api_url() -> str:
 def verifier_agent_id() -> str:
     """The reproducer's agent id, or "" when bootstrap has not written it yet."""
     return os.environ.get(VERIFIER_AGENT_ID_ENV, "")
+
+
+def room_name(room_id: str) -> str:
+    """A support room's name in Switch; the configured name for a room not seen at start."""
+    return support_rooms.get(room_id, ROOM_NAMES[ROOM_SUPPORT])
 
 
 def support_room_id() -> str:

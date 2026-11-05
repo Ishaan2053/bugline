@@ -91,29 +91,34 @@ def answer(name: str, asked_by: str, ticket_id: str, text: str) -> str:
 
 
 def escalation(
-    ticket_id: str, report: Report, reporter_name: str, language: str = TEAM_LANGUAGE
+    ticket_id: str,
+    report: Report,
+    reporter_name: str,
+    language: str = TEAM_LANGUAGE,
+    room: str = ROOM_NAMES[ROOM_SUPPORT],
 ) -> str:
     """The structured report posted to the eng room. First line `BL-n: <title>`.
 
     The report is in TEAM_LANGUAGE; a reporter who wrote in another language is named so.
+    `room` is the support room the report came from, which also names its chat app.
     """
     wrote_in = "" if language == TEAM_LANGUAGE else f", wrote in {language}"
     return "\n".join(
         [
             f"{ticket_id}: {_one_line(report.title)}",
-            f"Reporter: {reporter_name} ({ROOM_NAMES[ROOM_SUPPORT]}{wrote_in})",
+            f"Reporter: {reporter_name} ({room}{wrote_in})",
             *_report_lines(asdict(report)),
             f"@{REPRODUCER_ROLE} please reproduce and post your verdict in this thread.",
         ]
     )
 
 
-def reopened(ticket: Ticket, name: str, text: str) -> str:
+def reopened(ticket: Ticket, name: str, text: str, room: str = ROOM_NAMES[ROOM_SUPPORT]) -> str:
     """A reopened ticket, posted to the eng room like a new one so the reproducer starts again."""
     return "\n".join(
         [
             f"{ticket.ticket_id} (reopened): {_one_line(ticket.title)}",
-            f"Reopened by: {name} ({ROOM_NAMES[ROOM_SUPPORT]}): {_one_line(text)}",
+            f"Reopened by: {name} ({room}): {_one_line(text)}",
             f"Closed before with: {ticket.pr_url}",
             *_report_lines(ticket.report),
             f"@{REPRODUCER_ROLE} please reproduce again and post your verdict in this thread.",
