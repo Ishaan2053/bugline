@@ -9,7 +9,14 @@ from common.conventions import REPLY_MAX_LINES
 from common.switch_client import IncomingMessage
 
 import config
-from claude_runner import ClaudeResult, build_prompt, claude_command, run_claude, trim_reply
+from claude_runner import (
+    ClaudeResult,
+    build_prompt,
+    claude_command,
+    parse_output,
+    run_claude,
+    trim_reply,
+)
 
 MSG = IncomingMessage("eng", "room-e", "@u:x", "PM", "@reproducer BL-1 please", "m2", "m1")
 
@@ -75,6 +82,14 @@ def test_errors_are_results_not_exceptions(tmp_path) -> None:
 
     result = asyncio.run(run_claude(["no-such-claude-binary"], "", str(tmp_path), 30))
     assert not result.ok and "could not start" in result.text
+
+
+def test_refused_tool_calls_are_logged(caplog) -> None:
+    denial = {"tool_name": "Write", "tool_use_id": "t1", "tool_input": {"file_path": "x/y.py"}}
+    out = json.dumps({"is_error": False, "result": "done", "permission_denials": [denial]})
+    with caplog.at_level("WARNING"):
+        assert parse_output(0, out.encode(), b"") == ClaudeResult(True, "done")
+    assert 'Claude Code was refused Write {"file_path": "x/y.py"}' in caplog.text
 
 
 def test_trim_keeps_short_replies_and_caps_long_ones() -> None:

@@ -6,11 +6,13 @@ appended to Claude Code's system prompt at every run. The documents travel with 
 the repo the agent clones need not contain switch/. The prompt (the message, its sender and the
 thread so far) goes in on stdin, which avoids Windows command-line quoting and length limits.
 Claude Code prints one JSON object (`--output-format json`) whose `result` is its final message;
-that is the reply.
+that is the reply. Each tool call the permission rules refused is logged, with its input, so a
+rule that blocks real work shows up in the agent's log.
 """
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -21,6 +23,8 @@ from common.conventions import REPLY_MAX_LINES
 from common.switch_client import IncomingMessage
 
 import config
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -144,6 +148,9 @@ def parse_output(returncode: int | None, out: bytes, err: bytes) -> ClaudeResult
     except ValueError:
         data = None
     if isinstance(data, dict):
+        for denial in data.get("permission_denials") or []:
+            tool_input = json.dumps(denial.get("tool_input"), ensure_ascii=False)[:300]
+            log.warning("Claude Code was refused %s %s", denial.get("tool_name"), tool_input)
         result = str(data.get("result") or "").strip()
         if returncode == 0 and not data.get("is_error") and result:
             return ClaudeResult(True, result)
