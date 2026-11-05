@@ -21,6 +21,14 @@ def test_split_by_shares(trip, pay):
     assert expense["split"] == {str(ids["Asha"]): 100.0, str(ids["Ravi"]): 300.0}
 
 
+def test_equal_split_shares_add_up_to_amount(client, trip, pay):
+    expense = pay("Asha", 1000)
+    assert round(sum(expense["split"].values()), 2) == 1000.0
+    body = client.get(f"/groups/{trip['group']['id']}/balances").json()
+    assert round(sum(member["owes"] for member in body["members"]), 2) == 1000.0
+    assert round(sum(member["net"] for member in body["members"]), 2) == 0.0
+
+
 def test_balances_for_even_split(client, trip, pay):
     pay("Asha", 300)
     body = client.get(f"/groups/{trip['group']['id']}/balances").json()
