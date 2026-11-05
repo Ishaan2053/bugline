@@ -123,6 +123,10 @@ Seeded faults (planted on purpose; do not fix them unless the task explicitly sa
   the eng thread it was asked in. No model call, no rate guard.
 - **Reopen:** `still broken` / `reopen` / `not fixed` from a subscriber of a closed ticket reopens
   it and hands it back to `@reproducer` like a new ticket. No model call.
+- **Language:** the classification names the language the user wrote in; the ticket in `#eng` is
+  in English and says "wrote in Hindi". Replies to that user (including "fixed" and `ask`
+  questions) cost one lite-model `translate` call each; their `ask` answers are translated to
+  English. Rate-guard replies stay in English, since they exist to avoid model calls.
 - **Rate guards:** a user may have at most **5 open tickets**; beyond that the front desk replies
   "let's resolve the open ones first" and does not escalate. A per-user cooldown of 3 model-backed
   replies per minute; messages over the limit get a short "give me a minute" and are not sent to
@@ -260,7 +264,8 @@ bugline/
   call so load spreads across two quotas. The model names live in `agents/frontdesk/config.py`.
   `gemini-2.5-flash-lite` is closed to new users (404 on Nov 4), so the lite model is
   `gemini-3.5-flash-lite`. Structured output via a JSON schema:
-  `{kind: "bug"|"question"|"request"|"off-topic", missing: [string], report: {title, steps, expected, actual, group_id}}`.
+  `{kind: "bug"|"question"|"request"|"off-topic", language: string, missing: [string], report: {title, steps, expected, actual, group_id}}`.
+  The report fields are always in English, whatever language the user wrote in.
   The duplicate check is a second, separate lite-model call returning
   `{duplicate_of: "BL-n" | null, confidence: number}`; treat confidence under 0.7 as no match.
 - Exponential backoff on HTTP 429 (start 2 s, cap 30 s, 5 tries), then post "I'm rate-limited

@@ -43,6 +43,9 @@ MODEL_DEFAULT = "gemini-2.5-flash"  # answers to user questions
 # Classification and duplicate check. CLAUDE.md names gemini-2.5-flash-lite, but on Nov 4 2026 the
 # API refused it ("no longer available to new users") and named this model as the replacement.
 MODEL_LITE = "gemini-3.5-flash-lite"
+# The eng room's language. Reports reach it in this language; a reporter who writes in another
+# one gets the front desk's replies translated (one lite-model call per reply).
+TEAM_LANGUAGE = "English"
 DUPLICATE_MIN_CONFIDENCE = 0.7  # below this a duplicate match counts as no match
 BACKOFF_START_S = 2.0  # first wait after an HTTP 429, doubled on each retry
 BACKOFF_CAP_S = 30.0

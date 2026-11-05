@@ -19,6 +19,7 @@ from config import (
     ROOM_NAMES,
     ROOM_SUPPORT,
     STATUS_COMMAND,
+    TEAM_LANGUAGE,
     TICKET_PREFIX,
 )
 from store import Request, Subscriber, Ticket
@@ -88,12 +89,18 @@ def answer(name: str, asked_by: str, ticket_id: str, text: str) -> str:
     return f"{name} answered {asked_by}'s question on {ticket_id}: {_one_line(text)}"
 
 
-def escalation(ticket_id: str, report: Report, reporter_name: str) -> str:
-    """The structured report posted to the eng room. First line `BL-n: <title>`."""
+def escalation(
+    ticket_id: str, report: Report, reporter_name: str, language: str = TEAM_LANGUAGE
+) -> str:
+    """The structured report posted to the eng room. First line `BL-n: <title>`.
+
+    The report is in TEAM_LANGUAGE; a reporter who wrote in another language is named so.
+    """
+    wrote_in = "" if language == TEAM_LANGUAGE else f", wrote in {language}"
     return "\n".join(
         [
             f"{ticket_id}: {_one_line(report.title)}",
-            f"Reporter: {reporter_name} ({ROOM_NAMES[ROOM_SUPPORT]})",
+            f"Reporter: {reporter_name} ({ROOM_NAMES[ROOM_SUPPORT]}{wrote_in})",
             *_report_lines(asdict(report)),
             f"@{REPRODUCER_ROLE} please reproduce and post your verdict in this thread.",
         ]

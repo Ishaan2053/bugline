@@ -1,4 +1,4 @@
-"""Every Gemini call the front desk makes: classify a message, check for a duplicate, answer.
+"""Every Gemini call the front desk makes: classify, check for a duplicate, answer, translate.
 
 `call_model` is the only function that talks to the API. It retries HTTP 429 with exponential
 backoff, raises `RateLimited` when it gives up, and writes one line per attempt to calls.log so
@@ -54,6 +54,7 @@ class Classification:
     kind: Kind
     missing: list[str]
     report: Report
+    language: str = config.TEAM_LANGUAGE  # what the user wrote in; the report is in TEAM_LANGUAGE
 
 
 # JSON schemas from CLAUDE.md section 6, built once from the types above.
@@ -61,6 +62,7 @@ CLASSIFY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "kind": {"type": "string", "enum": list(KINDS)},
+        "language": {"type": "string"},
         "missing": {"type": "array", "items": {"type": "string", "enum": list(REQUIRED_FIELDS)}},
         "report": {
             "type": "object",
@@ -68,7 +70,7 @@ CLASSIFY_SCHEMA: dict[str, Any] = {
             "required": list(REPORT_FIELDS),
         },
     },
-    "required": ["kind", "missing", "report"],
+    "required": ["kind", "language", "missing", "report"],
 }
 
 DUPLICATE_SCHEMA: dict[str, Any] = {
@@ -136,6 +138,7 @@ def classify(message: str, draft: Draft | None = None) -> Classification:
         intake_rules=_intake_rules(),
         draft=json.dumps(asdict(draft), indent=2) if draft else "none",
         message=message,
+        team_language=config.TEAM_LANGUAGE,
     )
     data = call_model(config.MODEL_LITE, prompt, CLASSIFY_SCHEMA, purpose="classify")
     assert isinstance(data, dict)
@@ -146,6 +149,7 @@ def classify(message: str, draft: Draft | None = None) -> Classification:
         kind=data["kind"],
         missing=[name for name in data.get("missing", []) if name in REQUIRED_FIELDS],
         report=Report(**{name: str(report.get(name) or "") for name in REPORT_FIELDS}),
+        language=str(data.get("language") or config.TEAM_LANGUAGE).strip(),
     )
 
 
@@ -180,6 +184,14 @@ def answer_question(question: str) -> str:
     assert isinstance(text, str)
     # The prompt asks for short replies; this makes sure of it.
     return "\n".join(text.splitlines()[: config.REPLY_MAX_LINES])
+
+
+def translate(text: str, language: str) -> str:
+    """`text` in `language`, for a reporter who does not write in TEAM_LANGUAGE."""
+    prompt = _prompt("translate", language=language, text=text)
+    result = call_model(config.MODEL_LITE, prompt, purpose="translate")
+    assert isinstance(result, str)
+    return result or text
 
 
 def _prompt(name: str, **values: str) -> str:

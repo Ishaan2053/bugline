@@ -16,6 +16,7 @@ How the front desk sorts messages, and what a complete bug report needs, is in
 
 ## Rules
 
+- Write in any language. The front desk replies in it; the team gets your report in English.
 - Start a message with `@frontdesk` to reach the front desk. It does not read other messages.
 - The front desk replies in the thread of the message it answers. Reply there too.
 - Replies are under 10 lines.
