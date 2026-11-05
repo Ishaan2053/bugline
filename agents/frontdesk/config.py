@@ -5,6 +5,7 @@ to change a model name, a limit or a path, and tests can point paths at temporar
 """
 
 import os
+import re
 from pathlib import Path
 
 # Shared with the coder agents. Re-exported so the front desk keeps reading them as config.NAME.
@@ -70,6 +71,12 @@ OWNER_SENDER_ROLE = "owner"
 STATUS_COMMAND = "status"
 # "@frontdesk ask BL-n: <question>" in the eng room asks that ticket's reporter in the support room.
 ASK_COMMAND = "ask"
+
+# A subscriber's message in the support room that reopens their closed ticket. The "fixed" message
+# tells them to reply `still broken`; the other phrases are what people say anyway.
+REOPEN_RE = re.compile(
+    r"\b(?:reopen|still (?:broken|happening|failing|not working)|not fixed)\b", re.IGNORECASE
+)
 
 # One line per ticket plus a "+n more" line keeps the board under REPLY_MAX_LINES.
 STATUS_MAX_ROWS = REPLY_MAX_LINES - 2

@@ -38,7 +38,13 @@ TRACKED = "Already tracked as {ticket_id}, I'll tell you when it's fixed."
 ESCALATED = (
     "Thanks, logged as {ticket_id} and passed to the team. I'll tell you here when it's fixed."
 )
-FIXED = "{name}, {ticket_id} is fixed: {pr_url}"
+FIXED = (
+    "{name}, {ticket_id} is fixed: {pr_url}\n"
+    "If it still happens, reply `still broken` and mention me."
+)
+REOPENED = (
+    "Reopened {ticket_id} and passed it back to the team. I'll tell you here when it's fixed."
+)
 QUESTION = (
     "{name}, the team has a question about {ticket_id}: {question}\n"
     "Reply here and mention me, and I'll pass your answer on."
@@ -85,6 +91,19 @@ def escalation(ticket_id: str, report: Report, reporter_name: str) -> str:
             f"Reporter: {reporter_name} ({ROOM_NAMES[ROOM_SUPPORT]})",
             *_report_lines(asdict(report)),
             f"@{REPRODUCER_ROLE} please reproduce and post your verdict in this thread.",
+        ]
+    )
+
+
+def reopened(ticket: Ticket, name: str, text: str) -> str:
+    """A reopened ticket, posted to the eng room like a new one so the reproducer starts again."""
+    return "\n".join(
+        [
+            f"{ticket.ticket_id} (reopened): {_one_line(ticket.title)}",
+            f"Reopened by: {name} ({ROOM_NAMES[ROOM_SUPPORT]}): {_one_line(text)}",
+            f"Closed before with: {ticket.pr_url}",
+            *_report_lines(ticket.report),
+            f"@{REPRODUCER_ROLE} please reproduce again and post your verdict in this thread.",
         ]
     )
 

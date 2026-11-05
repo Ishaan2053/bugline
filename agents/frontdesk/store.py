@@ -259,6 +259,34 @@ class Store:
             ).rowcount
         return self.subscribers(ticket_id) if updated else []
 
+    def reopen_ticket(self, ticket_id: str) -> bool:
+        """Open a closed ticket again. The old PR link stays until the next close replaces it.
+
+        Returns False if the ticket is unknown or already open.
+        """
+        with self._db:
+            updated = self._db.execute(
+                "UPDATE tickets SET status = 'open', closed_at = NULL, closed_by = NULL"
+                " WHERE ticket_id = ? AND status = 'closed'",
+                (ticket_id,),
+            ).rowcount
+        return bool(updated)
+
+    def closed_ticket_of(self, user_id: str, ticket_id: str | None = None) -> Ticket | None:
+        """The closed ticket `user_id` is subscribed to: `ticket_id` if given, else the one closed
+        last. A reopen applies to it."""
+        sql = (
+            "SELECT t.* FROM tickets t JOIN subscribers s ON s.ticket_id = t.ticket_id"
+            " WHERE s.user_id = ? AND t.status = 'closed'"
+        )
+        args: tuple[str, ...] = (user_id,)
+        if ticket_id is not None:
+            sql += " AND t.ticket_id = ?"
+            args += (ticket_id,)
+        row = self._db.execute(sql + " ORDER BY t.closed_at DESC, t.n DESC LIMIT 1", args)
+        found = row.fetchone()
+        return _ticket(found) if found else None
+
     # --- questions to the reporter ---------------------------------------------------------------
 
     def add_question(

@@ -346,7 +346,9 @@ One bug, fault 1 (the share link error), from report to fix, across both apps, a
 7. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
    "Ishaan2053, BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/18". For `BL-2`, a
    second user's duplicate report was matched to it, and both reporters got the message.
-   `@frontdesk status` in `bugline-eng` shows who closed each ticket.
+   `@frontdesk status` in `bugline-eng` shows who closed each ticket. If the problem comes back,
+   anyone waiting on the ticket replies `still broken`; the front desk reopens it and hands it to
+   `@reproducer` again, with no model call. (Reopen not yet run live.)
    <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
 
 **Ask the reporter.** At any point the PM (or anyone in `bugline-eng`) can write
