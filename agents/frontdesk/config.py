@@ -47,7 +47,10 @@ MODEL_LITE = "gemini-3.5-flash-lite"
 # one gets the front desk's replies translated (one lite-model call per reply).
 TEAM_LANGUAGE = "English"
 DUPLICATE_MIN_CONFIDENCE = 0.7  # below this a duplicate match counts as no match
-BACKOFF_START_S = 2.0  # first wait after an HTTP 429, doubled on each retry
+# HTTP statuses worth waiting out: 429 is the free-tier quota, 503 is "the model is currently
+# experiencing high demand" (seen live on Nov 5). Any other error is raised at once.
+RETRY_STATUSES = (429, 503)
+BACKOFF_START_S = 2.0  # first wait after a retried status, doubled on each retry
 BACKOFF_CAP_S = 30.0
 BACKOFF_TRIES = 5  # total attempts, including the first
 

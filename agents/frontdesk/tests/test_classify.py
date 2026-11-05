@@ -4,7 +4,8 @@ import logging
 import os
 
 import pytest
-from fakes import ok, rate_limited
+from fakes import ok, overloaded, rate_limited, server_error
+from google.genai import errors
 
 import classify
 import config
@@ -91,6 +92,28 @@ def test_backoff_recovers_and_caps(fake, monkeypatch) -> None:
         "fine"
     )
     assert delays == [2.0, 4.0, 8.0, 16.0, 30.0, 30.0]
+
+
+def test_overloaded_model_is_waited_out_like_a_429(fake, isolated_paths) -> None:
+    fake.replies = [overloaded(), rate_limited(), ok("fine")]
+    delays: list[float] = []
+    assert classify.call_model(config.MODEL_LITE, "hi", purpose="t", sleep=delays.append) == "fine"
+    assert delays == [2.0, 4.0]
+    lines = (isolated_paths / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert [line.split("\t")[3] for line in lines] == ["503", "429", "ok"]
+
+
+def test_overloaded_every_time_ends_rate_limited(fake) -> None:
+    fake.replies = [overloaded() for _ in range(config.BACKOFF_TRIES)]
+    with pytest.raises(RateLimited):
+        classify.call_model(config.MODEL_LITE, "hi", purpose="t", sleep=lambda s: None)
+
+
+def test_other_server_errors_are_not_retried(fake) -> None:
+    fake.replies = [server_error(), ok("never sent")]
+    with pytest.raises(errors.ServerError):
+        classify.call_model(config.MODEL_LITE, "hi", purpose="t", sleep=lambda s: None)
+    assert len(fake.requests) == 1
 
 
 def test_calls_log_line(fake, isolated_paths) -> None:

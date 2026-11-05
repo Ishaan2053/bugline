@@ -1,9 +1,9 @@
 """Every Gemini call the front desk makes: classify, check for a duplicate, answer, translate.
 
-`call_model` is the only function that talks to the API. It retries HTTP 429 with exponential
-backoff, raises `RateLimited` when it gives up, and writes one line per attempt to calls.log so
-we can count model calls per loop. Prompts live in prompts/*.md; the intake rules and the user
-guide are read from the repo at call time and inserted, so no rule is written twice.
+`call_model` is the only function that talks to the API. It retries HTTP 429 and 503 with
+exponential backoff, raises `RateLimited` when it gives up, and writes one line per attempt to
+calls.log so we can count model calls per loop. Prompts live in prompts/*.md; the intake rules
+and the user guide are read from the repo at call time and inserted, so no rule is written twice.
 """
 
 import functools
@@ -30,7 +30,7 @@ KINDS: tuple[str, ...] = get_args(Kind)
 
 
 class RateLimited(Exception):
-    """Gemini kept answering 429 after every retry. The caller tells the user to wait."""
+    """Gemini kept answering 429 or 503 after every retry. The caller tells the user to wait."""
 
 
 # The report fields come from bugline.toml ([report] fields), in the order a ticket shows them.
@@ -99,8 +99,8 @@ def call_model(
 ) -> dict[str, Any] | str:
     """Send one prompt. With a schema, return the parsed JSON object; without, return the text.
 
-    On HTTP 429 wait BACKOFF_START_S, doubling up to BACKOFF_CAP_S, for BACKOFF_TRIES attempts
-    in total, then raise RateLimited. Other API errors are raised unchanged.
+    On a status in RETRY_STATUSES wait BACKOFF_START_S, doubling up to BACKOFF_CAP_S, for
+    BACKOFF_TRIES attempts in total, then raise RateLimited. Other API errors are raised unchanged.
     """
     cfg = None
     if schema is not None:
@@ -115,11 +115,13 @@ def call_model(
             )
             break
         except errors.APIError as exc:
-            if exc.code != 429:
+            if exc.code not in config.RETRY_STATUSES:
                 raise
-            _log_call(model, purpose, None, status="429")
+            _log_call(model, purpose, None, status=str(exc.code))
             if attempt == config.BACKOFF_TRIES:
-                raise RateLimited(f"{model} still rate-limited after {attempt} tries") from exc
+                raise RateLimited(
+                    f"{model} still answering {exc.code} after {attempt} tries"
+                ) from exc
             sleep(delay)
             delay = min(delay * 2, config.BACKOFF_CAP_S)
     _log_call(model, purpose, response.usage_metadata, status="ok")

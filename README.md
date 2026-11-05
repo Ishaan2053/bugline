@@ -544,8 +544,8 @@ faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
   post it. Naming the ticket (`BL-2: ...`) picks which question it answers.
 - Feature requests are logged, not handed over; the PM reads them with `@frontdesk requests`.
   Turning one into planned work is up to the PM.
-- The front desk runs on the Gemini free tier. It backs off on HTTP 429 and, if that fails, asks
-  the user to send the message again rather than going quiet.
+- The front desk runs on the Gemini free tier. It backs off on HTTP 429 (quota) and 503 (model
+  busy) and, if that fails, asks the user to send the message again rather than going quiet.
 
 ## Licence and credits
 
