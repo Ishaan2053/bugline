@@ -78,7 +78,10 @@ REOPEN_RE = re.compile(
     r"\b(?:reopen|still (?:broken|happening|failing|not working)|not fixed)\b", re.IGNORECASE
 )
 
-# One line per ticket plus a "+n more" line keeps the board under REPLY_MAX_LINES.
+# "@frontdesk requests" in the eng room lists the feature requests the support room logged.
+REQUESTS_COMMAND = "requests"
+
+# One line per ticket (or request) plus a "+n more" line keeps a list under REPLY_MAX_LINES.
 STATUS_MAX_ROWS = REPLY_MAX_LINES - 2
 
 

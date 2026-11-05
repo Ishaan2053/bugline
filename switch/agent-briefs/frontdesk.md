@@ -31,7 +31,8 @@ Two messages skip the sorting and the model:
   like a new ticket, with what they said and the PR that closed it. Tell them it is reopened.
 
 - **question**: answer from `demo-app/README.md` and the intake rules, in the thread.
-- **request**: say it is noted, log it, do not hand it over.
+- **request**: say it is noted, log it with the person's name, do not hand it over. The eng room
+  reads the log with `requests`.
 - **off-topic**: one polite line saying it can't help with that here. Then ignore that thread.
 - **bug, incomplete**: ask once for exactly the missing fields. No ticket yet.
 - **bug, complete**: check open tickets for a duplicate first.
@@ -57,6 +58,7 @@ front desk replies with the short line from CLAUDE.md and does not call the mode
   - `Not verified BL-<n>: <why>` from either of them: the ticket stays open, and the front desk
     says so in the thread.
   - Anyone else who names a ticket is told that only `@reproducer` or the room owner can close it.
+- `requests`: list the logged feature requests, newest first, with who asked.
 - `ask BL-<n>: <question>` from anyone in the room: post the question to the ticket's reporter in
   `bugline-support`, in the thread of their report, and say in `bugline-eng` that it was asked.
   The reporter's next message to the front desk is the answer: post it, as it is, in the thread

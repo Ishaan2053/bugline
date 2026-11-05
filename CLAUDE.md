@@ -104,7 +104,8 @@ Seeded faults (planted on purpose; do not fix them unless the task explicitly sa
 
 - Classification schema has four kinds: `bug`, `question`, `request`, `off-topic`.
 - `question` → answered in the support room from the repo reference and intake rules.
-- `request` → acknowledged and logged locally; not escalated during the hackathon.
+- `request` → acknowledged and logged locally; not escalated. `@frontdesk requests` in `#eng`
+  lists them, newest first, with who asked.
 - `off-topic` → one polite line, no further engagement, no model calls on follow-ups in that thread.
 - `bug` with missing fields → ask once for exactly the missing fields; no ticket until complete.
 - `bug`, complete → **duplicate check** before escalating: one lite-model call (see section 6) with the

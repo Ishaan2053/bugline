@@ -50,6 +50,7 @@ class Models(Protocol):
 STATUS_RE = re.compile(
     rf"{config.STATUS_COMMAND}(?:\s+{config.TICKET_ID_RE.pattern})?[.!?]?", re.IGNORECASE
 )
+REQUESTS_RE = re.compile(rf"{config.REQUESTS_COMMAND}[.!?]?", re.IGNORECASE)
 # "ask BL-n: <question>" (the colon is optional); the question may run over several lines.
 ASK_RE = re.compile(
     rf"{config.ASK_COMMAND}\s+{config.TICKET_ID_RE.pattern}[:,]?\s+(.+)", re.IGNORECASE | re.DOTALL
@@ -110,7 +111,7 @@ def _route(msg: IncomingMessage, text: str, store: Store, models: Models) -> lis
     if result.kind == "question":
         return [_reply(msg, models.answer_question(text))]
     if result.kind == "request":
-        store.log_request(msg.sender_id, msg.room_id, text)
+        store.log_request(msg.sender_id, msg.room_id, text, msg.sender_name)
         return [_reply(msg, messages.REQUEST_LOGGED)]
     if result.kind == "off-topic":
         store.mute(msg.room_id, msg.thread_root)
@@ -176,15 +177,19 @@ def _to_reproducer(body: str, ticket_id: str) -> Post:
 def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) -> list[Post]:
     """In eng the front desk shows the ticket board, asks reporters, and closes verified tickets.
 
-    `status` lists tickets and `status BL-n` shows one. `ask BL-n: <question>` asks the
-    reporter. `Verified BL-n: <PR url>` from the reproducer or the room owner closes a ticket;
-    `Not verified BL-n: <why>` leaves it open.
+    `status` lists tickets and `status BL-n` shows one. `requests` lists feature requests.
+    `ask BL-n: <question>` asks the reporter. `Verified BL-n: <PR url>` from the reproducer or
+    the room owner closes a ticket; `Not verified BL-n: <why>` leaves it open.
     Anyone else who names a ticket is told who may close it. No model call happens here.
     """
     text = without_mentions(msg.body)
     status = STATUS_RE.fullmatch(text)
     if status:
         return [_reply(msg, _status(store, status.group(1)))]
+    if REQUESTS_RE.fullmatch(text):
+        requests = store.list_requests(config.STATUS_MAX_ROWS)
+        board = messages.request_list(requests, store.utc_now(), store.count_requests())
+        return [_reply(msg, board)]
     ask = ASK_RE.fullmatch(text)
     if ask:
         return _ask_reporter(msg, store, config.format_ticket_id(int(ask.group(1))), ask.group(2))

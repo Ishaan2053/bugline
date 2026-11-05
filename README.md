@@ -535,7 +535,8 @@ faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
   desk says so in the ticket's thread when `send_targeted_message` reports no live target.
 - After `ask`, the reporter's next message to the front desk is taken as the answer, wherever they
   post it. Naming the ticket (`BL-2: ...`) picks which question it answers.
-- Feature requests are logged by the front desk, not handed over. Next step: show them to the PM.
+- Feature requests are logged, not handed over; the PM reads them with `@frontdesk requests`.
+  Turning one into planned work is up to the PM.
 - The front desk runs on the Gemini free tier. It backs off on HTTP 429 and, if that fails, asks
   the user to send the message again rather than going quiet.
 
