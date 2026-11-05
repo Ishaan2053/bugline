@@ -36,6 +36,9 @@ The three documents are attached to this room and are in the repo under `switch/
 `@frontdesk status` lists the tickets, newest first. `@frontdesk status $ticket_prefix-<n>` shows one ticket
 with its report and everyone waiting on it.
 
+`@frontdesk ask $ticket_prefix-<n>: <question>` asks the ticket's reporter in `$support_room`. Their answer
+comes back to the thread you asked in. Ask in the ticket's thread, one question at a time.
+
 ## Rules for everyone
 
 - Reply in the ticket's thread. One ticket, one thread. Do not start a new top-level message about

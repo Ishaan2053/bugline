@@ -21,5 +21,7 @@ How the front desk sorts messages, and what a complete bug report needs, is in
 - Replies are under 10 lines.
 - When a report is handed over, the front desk says so and gives the ticket id (`$ticket_prefix-<n>`). When it is
   fixed, the front desk posts here with the pull request link and tells everyone who reported it.
+- When the team needs more detail, the front desk asks here, in the thread of your report. Your
+  next message to `@frontdesk` is passed to the team as your answer.
 - If the front desk does not know, it says so. It never guesses an answer or a fix date.
 - Agents other than the front desk do not post in this room.

@@ -1,4 +1,5 @@
-"""The front desk's memory: tickets, subscribers, drafts, requests, muted threads, rate guards.
+"""The front desk's memory: tickets, subscribers, questions, drafts, requests, muted threads and
+rate guards.
 
 One SQLite file (stdlib `sqlite3`) so the agent survives restarts without a database server.
 The two rate guards live here because they must be checked before any model call, and they need
@@ -60,6 +61,16 @@ CREATE TABLE IF NOT EXISTS muted_threads (
     thread_id TEXT NOT NULL,
     PRIMARY KEY (room_id, thread_id)
 );
+CREATE TABLE IF NOT EXISTS questions (
+    id            INTEGER PRIMARY KEY,
+    ticket_id     TEXT NOT NULL REFERENCES tickets (ticket_id),
+    user_id       TEXT NOT NULL,
+    room_id       TEXT NOT NULL,
+    asked_by      TEXT NOT NULL,
+    eng_thread_id TEXT NOT NULL,
+    asked_at      TEXT NOT NULL,
+    answered_at   TEXT
+);
 CREATE TABLE IF NOT EXISTS reply_log (
     user_id TEXT NOT NULL,
     ts      REAL NOT NULL
@@ -98,6 +109,18 @@ class Subscriber(NamedTuple):
     room_id: str
     name: str = ""
     thread_id: str | None = None
+
+
+class Question(NamedTuple):
+    """A question from the eng room waiting for the reporter's answer.
+
+    The answer is posted in `eng_thread_id`, the thread the question was asked in.
+    """
+
+    id: int
+    ticket_id: str
+    asked_by: str
+    eng_thread_id: str
 
 
 class Store:
@@ -235,6 +258,40 @@ class Store:
                 (pr_url, self._iso_now(), closed_by, ticket_id),
             ).rowcount
         return self.subscribers(ticket_id) if updated else []
+
+    # --- questions to the reporter ---------------------------------------------------------------
+
+    def add_question(
+        self, ticket_id: str, user_id: str, room_id: str, asked_by: str, eng_thread_id: str
+    ) -> None:
+        """Remember that `user_id` (the reporter) owes the eng room an answer on `ticket_id`."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO questions (ticket_id, user_id, room_id, asked_by, eng_thread_id,"
+                " asked_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (ticket_id, user_id, room_id, asked_by, eng_thread_id, self._iso_now()),
+            )
+
+    def pending_question(
+        self, user_id: str, room_id: str, ticket_id: str | None = None
+    ) -> Question | None:
+        """The user's oldest unanswered question, or the one on `ticket_id` when given."""
+        sql = (
+            "SELECT id, ticket_id, asked_by, eng_thread_id FROM questions"
+            " WHERE user_id = ? AND room_id = ? AND answered_at IS NULL"
+        )
+        args: tuple[str, ...] = (user_id, room_id)
+        if ticket_id is not None:
+            sql += " AND ticket_id = ?"
+            args += (ticket_id,)
+        row = self._db.execute(sql + " ORDER BY id LIMIT 1", args).fetchone()
+        return Question(*row) if row else None
+
+    def mark_answered(self, question_id: int) -> None:
+        with self._db:
+            self._db.execute(
+                "UPDATE questions SET answered_at = ? WHERE id = ?", (self._iso_now(), question_id)
+            )
 
     # --- drafts ---------------------------------------------------------------------------------
 

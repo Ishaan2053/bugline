@@ -17,7 +17,7 @@ import classify
 import config
 import messages
 from classify import Classification, RateLimited, Report
-from store import Draft, Store, Ticket
+from store import Draft, Question, Store, Ticket
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,10 @@ class Models(Protocol):
 STATUS_RE = re.compile(
     rf"{config.STATUS_COMMAND}(?:\s+{config.TICKET_ID_RE.pattern})?[.!?]?", re.IGNORECASE
 )
+# "ask BL-n: <question>" (the colon is optional); the question may run over several lines.
+ASK_RE = re.compile(
+    rf"{config.ASK_COMMAND}\s+{config.TICKET_ID_RE.pattern}[:,]?\s+(.+)", re.IGNORECASE | re.DOTALL
+)
 
 
 def handle(
@@ -76,11 +80,20 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
     # Order matters: everything up to classify costs no model call.
     if store.is_muted(msg.room_id, msg.thread_root):
         return []
+    text = without_mentions(msg.body)
+    # A reporter with a question from the eng room: this message is the answer. It is passed on
+    # as it is, so no model call and no rate guard.
+    named = config.TICKET_ID_RE.search(text)
+    ticket_id = config.format_ticket_id(int(named.group(1))) if named else None
+    question = store.pending_question(msg.sender_id, msg.room_id, ticket_id) or (
+        store.pending_question(msg.sender_id, msg.room_id) if ticket_id else None
+    )
+    if question:
+        return _pass_answer(msg, text, question, store)
     if store.too_many_open_tickets(msg.sender_id):
         return [_reply(msg, messages.TOO_MANY_OPEN)]
     if not store.allow_model_reply(msg.sender_id):
         return [_reply(msg, messages.COOLDOWN)]
-    text = without_mentions(msg.body)
     try:
         return _route(msg, text, store, models)
     except RateLimited:
@@ -134,17 +147,31 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
     return [escalate, _reply(msg, messages.ESCALATED.format(ticket_id=ticket_id))]
 
 
-def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) -> list[Post]:
-    """In eng the front desk shows the ticket board and closes verified tickets.
+def _pass_answer(msg: IncomingMessage, text: str, question: Question, store: Store) -> list[Post]:
+    """Post the reporter's answer in the eng thread the question was asked in."""
+    store.mark_answered(question.id)
+    body = messages.answer(msg.sender_name, question.asked_by, question.ticket_id, text)
+    return [
+        Post(config.ROOM_ENG, body, thread_id=question.eng_thread_id),
+        _reply(msg, messages.ANSWER_PASSED),
+    ]
 
-    `status` lists tickets and `status BL-n` shows one. `Verified BL-n: <PR url>` from the
-    reproducer or the room owner closes a ticket; `Not verified BL-n: <why>` leaves it open.
+
+def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) -> list[Post]:
+    """In eng the front desk shows the ticket board, asks reporters, and closes verified tickets.
+
+    `status` lists tickets and `status BL-n` shows one. `ask BL-n: <question>` asks the
+    reporter. `Verified BL-n: <PR url>` from the reproducer or the room owner closes a ticket;
+    `Not verified BL-n: <why>` leaves it open.
     Anyone else who names a ticket is told who may close it. No model call happens here.
     """
     text = without_mentions(msg.body)
     status = STATUS_RE.fullmatch(text)
     if status:
         return [_reply(msg, _status(store, status.group(1)))]
+    ask = ASK_RE.fullmatch(text)
+    if ask:
+        return _ask_reporter(msg, store, config.format_ticket_id(int(ask.group(1))), ask.group(2))
     if not config.TICKET_ID_RE.search(msg.body):
         return [_reply(msg, messages.ENG_HELP)]
     if not _may_close(msg, verifiers):
@@ -170,6 +197,30 @@ def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) 
         for s in subscribers
     ]
     return [_reply(msg, messages.CLOSED.format(ticket_id=ticket_id)), *notices]
+
+
+def _ask_reporter(msg: IncomingMessage, store: Store, ticket_id: str, question: str) -> list[Post]:
+    """Ask the ticket's reporter in their support thread; their next message comes back here.
+
+    Anyone in the eng room may ask, people and agents: the room is already the team's.
+    """
+    ticket = store.get_ticket(ticket_id)
+    if ticket is None:
+        return [_reply(msg, messages.UNKNOWN_TICKET.format(ticket_id=ticket_id))]
+    if ticket.status != "open":
+        return [_reply(msg, messages.ASK_CLOSED.format(ticket_id=ticket_id))]
+    reporter = next(s for s in store.subscribers(ticket_id) if s.user_id == ticket.reporter_id)
+    asked_by = msg.sender_name or msg.sender_id
+    store.add_question(ticket_id, reporter.user_id, reporter.room_id, asked_by, msg.thread_root)
+    name = reporter.name or "Hello"
+    return [
+        Post(
+            config.ROOM_SUPPORT,
+            messages.QUESTION.format(name=name, ticket_id=ticket_id, question=question.strip()),
+            thread_id=reporter.thread_id,
+        ),
+        _reply(msg, messages.ASKED.format(name=name, room=config.ROOM_NAMES[config.ROOM_SUPPORT])),
+    ]
 
 
 def _may_close(msg: IncomingMessage, verifiers: Collection[str]) -> bool:

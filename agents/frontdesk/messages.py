@@ -10,6 +10,7 @@ from datetime import datetime
 
 from classify import Report
 from config import (
+    ASK_COMMAND,
     MAX_OPEN_TICKETS,
     PR_URL_RE,
     PROJECT,
@@ -38,6 +39,11 @@ ESCALATED = (
     "Thanks, logged as {ticket_id} and passed to the team. I'll tell you here when it's fixed."
 )
 FIXED = "{name}, {ticket_id} is fixed: {pr_url}"
+QUESTION = (
+    "{name}, the team has a question about {ticket_id}: {question}\n"
+    "Reply here and mention me, and I'll pass your answer on."
+)
+ANSWER_PASSED = "Thanks, I've passed that to the team."
 
 # --- eng room -------------------------------------------------------------------------------
 CLOSED = "Closed {ticket_id}, telling the reporter."
@@ -46,13 +52,16 @@ NOT_OPEN = "{ticket_id} is not an open ticket, so there is nothing to close."
 _CLOSE_LINE = f"`Verified {TICKET_PREFIX}-n: <PR link>`"
 ENG_HELP = (
     f"I bring bug reports here and close them when @{REPRODUCER_ROLE} posts {_CLOSE_LINE}."
-    f" `{STATUS_COMMAND}` lists the tickets, `{STATUS_COMMAND} {TICKET_PREFIX}-n` shows one."
+    f" `{STATUS_COMMAND}` lists the tickets, `{STATUS_COMMAND} {TICKET_PREFIX}-n` shows one,"
+    f" `{ASK_COMMAND} {TICKET_PREFIX}-n: <question>` asks its reporter."
 )
 NOT_VERIFIER = f"Only @{REPRODUCER_ROLE} or the room owner can close a ticket, with {_CLOSE_LINE}."
 CLOSE_FORMAT = f"To close a ticket, post {_CLOSE_LINE} with the full PR link."
 STAYS_OPEN = "{ticket_id} stays open. PM, the reason is in this thread; you decide what is next."
 NO_TICKETS = "No tickets yet."
 UNKNOWN_TICKET = "There is no ticket {ticket_id}."
+ASKED = "Asked {name} in {room}. Their answer will come to this thread."
+ASK_CLOSED = "{ticket_id} is closed, so I won't ask the reporter."
 NO_REPRODUCER = "Nobody holds the {role} role right now. PM, please start one for {ticket_id}."
 
 
@@ -61,6 +70,11 @@ def ask_missing(missing: list[str]) -> str:
     labels = [FIELD_LABELS.get(name, name) for name in missing]
     wanted = labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " and " + labels[-1]
     return f"Thanks. To pass this to the team I need {wanted}. Reply here and mention me."
+
+
+def answer(name: str, asked_by: str, ticket_id: str, text: str) -> str:
+    """The reporter's answer, as posted in the eng thread the question came from."""
+    return f"{name} answered {asked_by}'s question on {ticket_id}: {_one_line(text)}"
 
 
 def escalation(ticket_id: str, report: Report, reporter_name: str) -> str:
