@@ -46,7 +46,7 @@ from common.switch_client import Credentials, load_credentials
 BRIDGE_RUNNING = "active"  # `status` of a working connection in GET /gateway/collaborations
 AGENT_LIVE = "live"  # `agent_statuses` value of a connected agent in GET /gateway/rooms/{id}
 # Neither the Gateway nor get_room_detail reports the follow-ups setting, so it is a reminder.
-FOLLOW_UPS_REMINDER = "REMINDER type `!follow-ups off` in both rooms (Switch does not report it)"
+FOLLOW_UPS_REMINDER = "REMINDER type `!follow-ups off` in every room (Switch does not report it)"
 RERUN = "run scripts/bootstrap.py"
 
 
