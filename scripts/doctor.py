@@ -265,32 +265,47 @@ def role_checks(
 # --- this machine -----------------------------------------------------------------------------
 
 
-def command_ok(cmd: list[str]) -> bool:
-    """True if the command runs and exits 0. shutil.which finds .cmd/.exe shims on Windows."""
+def command_output(cmd: list[str]) -> str | None:
+    """The command's output if it runs and exits 0, else None. shutil.which finds .cmd/.exe
+    shims on Windows."""
     path = shutil.which(cmd[0])
     if not path:
-        return False
+        return None
     try:
-        done = subprocess.run([path, *cmd[1:]], capture_output=True, timeout=30, check=False)
+        done = subprocess.run(
+            [path, *cmd[1:]], capture_output=True, text=True, timeout=30, check=False
+        )
     except OSError, subprocess.TimeoutExpired:
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def signed_in(output: str | None) -> bool:
+    """Whether `claude auth status --json` says Claude Code is signed in. The coders run it
+    headless, where an expired sign-in fails every job."""
+    try:
+        return json.loads(output or "").get("loggedIn") is True
+    except ValueError, AttributeError:
         return False
-    return done.returncode == 0
 
 
 def local_checks(
-    coders: list[Any], run: Callable[[list[str]], bool] = command_ok
+    coders: list[Any], run: Callable[[list[str]], str | None] = command_output
 ) -> Iterator[Check]:
-    """Claude Code, the GitHub CLI and Git work, and each coder has its clone with the app venv."""
+    """Claude Code (installed and signed in), the GitHub CLI and Git work, and each coder has its
+    clone with the app venv."""
+    claude = coders[0].claude_bin
     for name, cmd, hint in (
-        (
-            "claude",
-            [coders[0].claude_bin, "--version"],
-            "install Claude Code or set CODER_CLAUDE_BIN",
-        ),
+        ("claude", [claude, "--version"], "install Claude Code or set CODER_CLAUDE_BIN"),
         ("gh", ["gh", "auth", "status"], "run `gh auth login`"),
         ("git", ["git", "--version"], "install Git"),
     ):
-        yield Check(f"tool {name}", run(cmd), hint)
+        yield Check(f"tool {name}", run(cmd) is not None, hint)
+    yield Check(
+        "claude signed in",
+        signed_in(run([claude, "auth", "status", "--json"])),
+        "run `claude auth login`, as the user the coders run as",
+    )
     for coder in coders:
         venv = coder.clone / APP_DIR / ".venv"
         if not coder.clone.is_dir():

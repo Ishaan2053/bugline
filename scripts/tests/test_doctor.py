@@ -153,11 +153,23 @@ def test_local_checks_find_a_missing_clone(tmp_path: Path) -> None:
         SimpleNamespace(agent_name="bugline-repro", clone=ready, claude_bin="claude"),
         SimpleNamespace(agent_name="bugline-fixer", clone=tmp_path / "nope", claude_bin="claude"),
     ]
-    checks = list(doctor.local_checks(coders, run=lambda cmd: cmd[0] != "gh"))
+
+    def run(cmd: list[str]) -> str | None:
+        if cmd[0] == "gh":
+            return None  # gh missing or signed out
+        return '{"loggedIn": true}' if cmd[1:3] == ["auth", "status"] else "1.0"
+
+    checks = list(doctor.local_checks(coders, run=run))
 
     by_name = {c.name.split(" (")[0]: c for c in checks}
     assert by_name["tool claude"].ok and by_name["tool git"].ok
+    assert by_name["claude signed in"].ok
     assert not by_name["tool gh"].ok
     assert by_name["clone bugline-repro"].ok
     assert not by_name["clone bugline-fixer"].ok
     assert "clone the repo there" in by_name["clone bugline-fixer"].hint
+
+
+@pytest.mark.parametrize("output", ['{"loggedIn": false}', None, "not json", "[]"])
+def test_claude_signed_out_or_unreadable_fails(output: str | None) -> None:
+    assert not doctor.signed_in(output)
