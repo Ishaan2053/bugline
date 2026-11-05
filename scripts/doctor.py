@@ -101,6 +101,7 @@ def switch_checks(gw: Gateway, layout: Layout, email: str, password: str) -> Ite
     agent_ids = {name: agent["id"] for name, agent in server_agents.items()}
     for key, specs in room_members(layout).items():
         yield from room_checks(gw, layout.room_names[key], rooms.get(ids[key]), specs, agent_ids)
+    yield link_check(gw, layout, ids)
     creds = {}
     for spec in layout.agents:
         check, creds[spec.name] = key_check(gw, spec, agent_ids.get(spec.name))
@@ -160,6 +161,18 @@ def room_checks(
             status == AGENT_LIVE,
             f"status is {status!r}; {start_hint(spec)}",
         )
+
+
+def link_check(gw: Gateway, layout: Layout, ids: dict[str, str]) -> Check:
+    """The support room's link that the front desk sends reports by points at the eng room."""
+    label = layout.escalation_link
+    links = gw.get(f"/rooms/{ids['support']}/linked-rooms") or []
+    targets = [row["target_room_id"] for row in links if row.get("label") == label]
+    return Check(
+        f"link {layout.room_names['support']} -> {layout.room_names['eng']} {label!r}",
+        targets == [ids["eng"]],
+        f"the front desk sends reports where this link points; {RERUN}",
+    )
 
 
 def connected_agents(gw: Gateway, layout: Layout) -> list[str]:

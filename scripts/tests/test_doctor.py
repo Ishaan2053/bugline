@@ -55,6 +55,26 @@ def test_running_setup_passes(tmp_path: Path, capsys: pytest.CaptureFixture) -> 
     assert "PASS role fixer (bugline-fixer)" in out
     assert "PASS access rule bugline-fixer (the owner only, in bugline-eng only)" in out
     assert "PASS verify hand-off settings in both .env files" in out
+    assert "PASS link bugline-support -> bugline-eng 'escalates to'" in out
+
+
+class Unlinked(RunningSwitch):
+    """The running setup with the support room's links removed."""
+
+    def read(self, path: str) -> object:
+        if path.endswith("/linked-rooms"):
+            return []
+        return super().read(path)
+
+
+def test_missing_escalation_link_fails_with_the_fix(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    ok, out = check(Unlinked(), tmp_path, capsys)
+
+    assert not ok
+    assert "FAIL link bugline-support -> bugline-eng 'escalates to'" in out
+    assert "sends reports where this link points" in out
 
 
 def test_missing_handoff_setting_fails_with_the_fix(tmp_path: Path) -> None:

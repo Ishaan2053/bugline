@@ -73,7 +73,9 @@ TEMPLATES = {
 TEMPLATE_INPUTS = {"support": {}, "eng": {"repo_url": PROJECT.repo_web}}
 APP_DIR = PROJECT.app_dir  # in each coder's clone: the app, its tests and its venv
 INSTRUCTIONS = {key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for key in ROOM_KEYS}
-LINKS = [("support", "eng", "escalates to"), ("eng", "support", "supports")]
+# The eng room's link back to the support room. The support room's link to eng is the front
+# desk's ESCALATION_LINK (Layout.escalation_link): the front desk sends reports where it points.
+SUPPORTS_LINK = "supports"
 FRONTDESK_ALIAS = "frontdesk"  # both templates give this alias
 REFERENCE_NAME = "bugline-repo"  # made by the template's `references:`
 # Named after the project, so a second project on the same server gets its own kit and documents.
@@ -134,6 +136,7 @@ class Layout:
     coder_eng_room_var: str
     verifier_id_var: str  # front desk: the reproducer's agent id, whose Verified closes a ticket
     frontdesk_name_var: str  # coders: the front desk's agent name, where verdicts go
+    escalation_link: str  # label of the support -> eng link the front desk sends reports by
 
 
 def _load(name: str, path: Path) -> ModuleType:
@@ -176,6 +179,7 @@ def load_layout() -> Layout:
         coder_eng_room_var=coder.ENG_ROOM_ID_ENV,
         verifier_id_var=frontdesk.VERIFIER_AGENT_ID_ENV,
         frontdesk_name_var=coder.FRONTDESK_AGENT_NAME_ENV,
+        escalation_link=frontdesk.ESCALATION_LINK,
     )
 
 
@@ -503,6 +507,11 @@ def ensure_instructions(gw: Gateway, room: str, room_id: str, path: Path, text: 
     say(f"{room} instructions", gw.done(f"updated from {path.relative_to(REPO_ROOT)}"))
 
 
+def room_links(layout: Layout) -> list[tuple[str, str, str]]:
+    """(source room key, target room key, label) for each link between the two rooms."""
+    return [("support", "eng", layout.escalation_link), ("eng", "support", SUPPORTS_LINK)]
+
+
 def ensure_link(
     gw: Gateway, names: dict[str, str], ids: dict[str, str], link: tuple[str, str, str]
 ) -> None:
@@ -661,7 +670,7 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
     for key, room_id in room_ids.items():
         text = instructions_text(key, kinds)
         ensure_instructions(gw, names[key], room_id, INSTRUCTIONS[key], text)
-    for link in LINKS:
+    for link in room_links(layout):
         ensure_link(gw, names, room_ids, link)
     frontdesk = layout.agents[0]
     creds = load_credentials(frontdesk.credentials) if frontdesk.credentials.is_file() else None
