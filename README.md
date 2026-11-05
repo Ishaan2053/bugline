@@ -7,7 +7,7 @@ Switch carries the work across, keeps a human in charge, and closes the loop bac
 A user writes `@frontdesk` in a Telegram group. A complete bug report crosses into a Slack channel
 as ticket `BL-n`. A coding agent reproduces it. Only the PM can tell a second coding agent to fix
 it. The fixer opens a pull request, and the front desk tells everyone who reported the bug, back
-in Telegram, with the link. All of this ran live on Nov 4, 2026; the numbers are below.
+in Telegram, with the link. All of this ran live on Nov 4 and 5, 2026; the numbers are below.
 
 <!-- author: add the demo GIF here (Telegram and Slack side by side, one full loop) -->
 
@@ -25,7 +25,7 @@ carries part of the loop:
 | Switch primitive | What Bugline uses it for | Without it |
 | --- | --- | --- |
 | Rooms on two chat apps | `bugline-support` is a Telegram group, `bugline-eng` is a Slack channel. Both are Switch rooms, and the front desk is a member of both. | You write and host a Telegram bot, a Slack bot and a bridge between them, and map users across both. |
-| Room links | `bugline-support` → `bugline-eng` "escalates to"; `bugline-eng` → `bugline-support` "supports". Agents see that the other room exists and what it is for. A link grants no access. | Agents in `bugline-eng` have no idea the tickets come from users in a Telegram group, or where the answer goes back to. |
+| Room links | `bugline-support` → `bugline-eng` "escalates to"; `bugline-eng` → `bugline-support` "supports". Agents see that the other room exists and what it is for. A link grants no access: the front desk, a member of both rooms, carries each report across. | Agents in `bugline-eng` have no idea the tickets come from users in a Telegram group, or where the answer goes back to. |
 | Shared role `reproducer` | The front desk's ticket addresses `@reproducer`. Whoever holds the role gets it. | Tickets go to a hard-coded agent name. |
 | Exclusive role `fixer` + access rule | One agent at a time holds `fixer`. The access rule on `bugline-fixer` admits only its owner (the PM), only in `bugline-eng`. In the live run a second Switch user, `sam`, wrote `@fixer fix BL-2 now`; Switch answered "You're not permitted to direct messages to me in this room — my operator has restricted who can address me here." in the fixer's name, and the fixer program never received the message. This is the approval gate. | The gate is an `if` statement inside the agent, and a prompt can talk its way past it. |
 | Targeted messages between agents | Three hand-offs, each with `send_targeted_message`, which also says whether the target is reachable. The front desk hands a ticket to whoever holds `reproducer`. The fixer hands its PR to `reproducer` to verify. The reproducer hands its `Verified BL-n` to the front desk by name. Only that line, from the reproducer or from the room owner, closes a ticket: the front desk tells the owner by the `sender_role` Switch puts on each message, and anyone else who names a ticket is told who may close it. | Agents poll a shared database or a queue you build, and anyone in the room can close a ticket. |
@@ -75,15 +75,83 @@ runs Claude Code headless (`claude -p`) in its own clone with its brief as the s
 They are not Switch Console-managed agents because Console cannot run those on Windows. Its code
 says `"SDK sessions require a POSIX SSH execution host."`, and every provider shows "Not supported
 here". Questions, requests, off-topic messages, incomplete reports and duplicates stay in
-`bugline-support`; only complete, new bugs cross the link. The full rules are in
-[CLAUDE.md section 2](CLAUDE.md#2-architecture).
+`bugline-support`; only complete, new bugs cross the link. The full rules are in the front
+desk's [brief](switch/agent-briefs/frontdesk.md) and [intake-rules.md](switch/docs/intake-rules.md).
 
-## Reproduce it in 15 minutes
+## The workflow, step by step
+
+One bug, fault 1 (the share link error), from report to fix, across both apps. Steps 1 to 5 are
+from the Nov 4 run (`BL-1`), step 6 from Nov 5 (`BL-3`). The seeded faults are listed under
+[Seeded faults](#seeded-faults).
+
+1. **Report.** In `bugline-support` the user wrote `the share link is broken.` to the front desk.
+   It asked once for the missing fields: "To pass this to the team I need the steps you took and
+   your group id." The user replied with `group 1, I opened the share link goa-trip-share
+   expecting the summary but got Internal Server Error`.
+   <!-- author: add screenshot of the report and the front desk's reply in Telegram -->
+2. **Handoff.** The front desk opened `BL-1` and posted it in `bugline-eng` in the shape in
+   [intake-rules.md](switch/docs/intake-rules.md#handing-a-bug-to-bugline-eng), addressed to
+   `@reproducer`. The user was told "logged as BL-1".
+   <!-- author: add screenshot of BL-1 arriving in Slack -->
+3. **Reproduce.** The reproducer ran a scratch script on a fresh seeded database and replied in
+   the thread: `ZeroDivisionError` in `share()`, `Verdict: reproduced`, and the cause (Meera paid
+   for no expenses, so `expenses_paid` is 0)
+   ([repro-checklist.md](switch/docs/repro-checklist.md)).
+   <!-- author: add screenshot of the reproducer's verdict -->
+4. **Refusal.** Someone who is not the PM writes `@fixer fix BL-2 now`. Switch refuses in the
+   fixer's name, and the fixer program never sees it. (Run live on `BL-2` by a second Switch user
+   through the Gateway chat API; a second Slack account is not tested yet.)
+   <!-- author: add screenshot of the refusal -->
+5. **Approve and fix.** The PM replied in the thread:
+   `@fixer go on BL-1, keep it to the share handler, add a regression test`. The fixer branched,
+   wrote the failing test, guarded the division, ran `pytest -q` and ruff, opened
+   [PR #18](https://github.com/Ishaan2053/bugline/pull/18) titled `BL-1: ...`
+   ([fix-policy.md](switch/docs/fix-policy.md)). It now ends by handing the PR on:
+   `@reproducer please verify BL-1 on PR <link> (branch <name>)`.
+   <!-- author: add screenshot of the fixer's PR message and the PR -->
+6. **Verify.** The reproducer fetches the PR into a local branch, reruns the scratch script that
+   proved the bug and `pytest -q`, goes back to `main`, and posts
+   `@frontdesk Verified BL-1: <PR link>`, or `Not verified BL-1: <why>`, which leaves the ticket
+   open for the PM ([repro-checklist.md, "Verify a fix"](switch/docs/repro-checklist.md#5-verify-a-fix)).
+   This is a second agent-to-agent hand-off over a Switch role with no person in the middle,
+   while the PM stays the only one who can start a fix. The front desk accepts the close only
+   from the reproducer or the room owner; anyone else who names a ticket is told who may close
+   it. Run live on Nov 5 (`BL-3`): fixer PR, reproducer `Verified`, close and the "fixed"
+   message in the support room took 70 s after the PM's approval.
+   <!-- author: add screenshot of the Verified line -->
+7. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
+   "Ishaan2053, BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/18". For `BL-2`, a
+   second user's duplicate report was matched to it, and both reporters got the message.
+   `@frontdesk status` in `bugline-eng` shows who closed each ticket. If the problem comes back,
+   anyone waiting on the ticket replies `still broken`; the front desk reopens it and hands it to
+   `@reproducer` again, with no model call. Run live on Nov 5: the reproducer reran its script
+   on `main` and posted `Verdict: reproduced` in the reopened thread.
+   <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
+
+**Ask the reporter.** At any point the PM (or anyone in `bugline-eng`) can write
+`@frontdesk ask BL-1: which browser were you on?` in the ticket's thread. The front desk posts the
+question to the reporter in their Telegram thread, and the reporter's next message to it comes
+back into that Slack thread, word for word, with no model call. The PM and the reporter never
+share a chat app. Run live on Nov 5 on `BL-3`.
+
+**Any language.** A reporter can write in Hindi, Hinglish or any other language. On Nov 5, `sam`
+wrote "bhai share link kholte hi error aa raha hai"; the front desk asked for the group id in
+Hinglish, and `BL-4` reached Slack in English with "Reporter: sam (bugline-support, wrote in
+Hinglish)". Each translated reply costs one lite-model call (`translate` in `calls.log`).
+
+PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
+
+The quiet paths (a question answered from the user guide, a request, a vague report, a duplicate,
+an off-topic message, a burst of messages, a report the reproducer could not reproduce) all ran
+live too. The exact messages are in
+[switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
+
+## Reproduce it
 
 Part A runs from a fresh clone with Docker and Python. Part B needs a Switch server, a Telegram bot
 and a Slack app of your own; the chat-app steps are manual, and one script does the rest. Without
-Telegram or Slack, the [Mattermost variant](#variant-mattermost-only-no-telegram-or-slack) uses
-the Mattermost that Switch Console bundles (one full loop run on Nov 5).
+Telegram or Slack, the [Mattermost variant](docs/switch-setup.md#mattermost-only-no-telegram-or-slack)
+uses the Mattermost that Switch Console bundles (one full loop run on Nov 5).
 [docs/switch-setup.md](docs/switch-setup.md) walks through part B in full.
 
 ### Prerequisites
@@ -97,7 +165,7 @@ the Mattermost that Switch Console bundles (one full loop run on Nov 5).
 ### Part A: the demo app and the tests
 
 Clone the repo and start the demo app, an expense splitter with seeded faults
-([table in CLAUDE.md](CLAUDE.md#demo-app-expense-splitter-demo-app)).
+([Seeded faults](#seeded-faults)).
 
 PowerShell:
 
@@ -136,6 +204,20 @@ The 500 on the share link is fault 1, planted on purpose (`ZeroDivisionError` in
 `docker compose logs demo-app`). The `owes` values add up to 9099.99 of 9100.00 spent: that is
 fault 2. Stop the app with `docker compose down`.
 
+#### Seeded faults
+
+Planted on purpose, one per path through the agents. Do not fix them outside a demo run. Pull
+requests #18 and #19 fix faults 1 and 2 and stay unmerged.
+
+| # | Fault | What the user sees | Path |
+| --- | --- | --- | --- |
+| 1 | `GET /share/{token}` divides by a member's expense count | "Share link gives an error" (500) | front desk → reproducer → PM approves → fixer PR → verified → reporter told |
+| 2 | An equal split rounds each share and drops the leftover paisa | Balances `owes` add up to 9099.99 of 9100.00 | the reproducer shows the exact numbers |
+| 3 | Not a bug: an expense entered with the wrong payer | "It says I owe money I already paid" | the front desk answers from the user guide; nothing is escalated |
+| 4 | A report with no steps or group id | a vague complaint | the front desk asks for exactly the missing fields |
+| 5 | A second user reports fault 1 while `BL-1` is open | "Share link broken for me too" | matched to `BL-1`; both reporters are told when it closes |
+| 6 | Off-topic | anything unrelated | one polite line, then silence in that thread |
+
 Run the tests. PowerShell, from the repo root (the demo app first, then the front desk):
 
 ```powershell
@@ -170,12 +252,19 @@ pytest -q
 python agent.py --help
 ```
 
-Expect `8 passed` for the demo app and `47 passed, 1 skipped` for the front desk (the skipped test
+Expect `8 passed` for the demo app and `83 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
 `--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
-`agents/common` (`12 passed`), `agents/coder` (`13 passed`) and `scripts` (`19 passed`).
+`agents/common` (`28 passed`), `agents/coder` (`24 passed`) and `scripts` (`23 passed`).
 
 ### Part B: Switch, Telegram and Slack
+
+**Fork first.** The fixer pushes branches and opens PRs, so it needs a repo you can push to.
+Fork this repo, set `repo_url` in `bugline.toml` to your fork, use your fork's URL wherever the
+steps below clone `Ishaan2053/bugline`, sign in with `gh auth login` as yourself, and create the
+label the fixer puts on its PRs: `gh label create demo-app` in the fork. On Windows, bootstrap
+reads the server's address and admin login from Switch Console; anywhere else, set
+`SWITCH_API_URL`, `SWITCH_ADMIN_EMAIL` and `SWITCH_ADMIN_PASSWORD` before running it.
 
 1. **Chat apps, by hand.** Make a Telegram bot with group privacy off and a group named
    `bugline-support`; connect the bot in Switch Console, add it to the group and post one
@@ -264,116 +353,6 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
 6. Run the seeded paths in
    [switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
 
-#### Variant: Mattermost only, no Telegram or Slack
-
-> **Run once, on Nov 5.** The author's demo runs on Telegram and Slack. This variant was run from a
-> fresh clone, on the same server as the demo, with a second `bugline.toml` (`bltest-*` rooms and
-> agents, tickets `BT-n`, both bridges `mattermost`). Bootstrap made everything in one run, a
-> second run changed nothing, and `doctor.py` passed every check. Then: a vague report, the
-> question for the group id, `BT-1` in the eng room, reproduced; a second Switch user's `@fixer`
-> refused; the owner's approval, fixer PR, reproducer `Verified`, and "fixed" back in the support
-> room, under 2 minutes after approval. The users' messages went in through the Gateway chat API,
-> as Admin and a second Switch user, not typed in Mattermost's web app.
->
-> Switch Console starts a Mattermost server along with its local server (in Docker, so Docker
-> must be running) and connects it as the messaging app `Mattermost`. Switch can create channels
-> there, so bootstrap makes both rooms, `bugline-support` from
-> [`switch/bugline-support.template.yaml`](switch/bugline-support.template.yaml) and `bugline-eng`
-> from [`switch/bugline.template.yaml`](switch/bugline.template.yaml). You need no Telegram bot and
-> no Slack app:
->
-> - Skip step 1. Do step 2. In step 3, add two flags:
->
->   ```powershell
->   agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --support-bridge mattermost --eng-bridge mattermost
->   ```
->
->   ```bash
->   agents/frontdesk/.venv/bin/python scripts/bootstrap.py --support-bridge mattermost --eng-bridge mattermost
->   ```
->
-> - Do step 4. Open Mattermost from Console Home, or at `http://localhost:<port>`, where the port
->   is `mattermost` in Console's `ports.json`. Both rooms are channels there; type
->   `!follow-ups off` in each.
-> - The end user is a second Mattermost account (Console's Mattermost allows sign-up from its
->   sign-in page). The same account tests the gate: `@fixer` from it should be refused, because
->   the fixer's access rule admits only its owner. For a second Switch user the refusal read as it
->   does on Slack; a Mattermost account that is not linked to a Switch user was not tried.
->
-> The flags are not saved. Bootstrap run again without them goes back to Telegram and Slack and
-> rewrites the room ids in both `.env` files and the fixer's access rule. To keep Mattermost, set
-> `BUGLINE_SUPPORT_BRIDGE=mattermost` and `BUGLINE_ENG_BRIDGE=mattermost` in
-> `agents/frontdesk/.env`. Other chat apps where Switch can create channels (Discord, Teams) take
-> the same flags; see [switch-setup.md](docs/switch-setup.md#other-chat-apps).
-
-## The workflow, step by step
-
-One bug, fault 1 (the share link error), from report to fix, across both apps, as it ran on Nov 4.
-
-1. **Report.** In `bugline-support` the user wrote `the share link is broken.` to the front desk.
-   It asked once for the missing fields: "To pass this to the team I need the steps you took and
-   your group id." The user replied with `group 1, I opened the share link goa-trip-share
-   expecting the summary but got Internal Server Error`.
-   <!-- author: add screenshot of the report and the front desk's reply in Telegram -->
-2. **Handoff.** The front desk opened `BL-1` and posted it in `bugline-eng` in the shape in
-   [intake-rules.md](switch/docs/intake-rules.md#handing-a-bug-to-bugline-eng), addressed to
-   `@reproducer`. The user was told "logged as BL-1".
-   <!-- author: add screenshot of BL-1 arriving in Slack -->
-3. **Reproduce.** The reproducer ran a scratch script on a fresh seeded database and replied in
-   the thread: `ZeroDivisionError` in `share()`, `Verdict: reproduced`, and the cause (Meera paid
-   for no expenses, so `expenses_paid` is 0)
-   ([repro-checklist.md](switch/docs/repro-checklist.md)).
-   <!-- author: add screenshot of the reproducer's verdict -->
-4. **Refusal.** Someone who is not the PM writes `@fixer fix BL-2 now`. Switch refuses in the
-   fixer's name, and the fixer program never sees it. (Run live on `BL-2` by a second Switch user
-   through the Gateway chat API; a second Slack account is not tested yet.)
-   <!-- author: add screenshot of the refusal -->
-5. **Approve and fix.** The PM replied in the thread:
-   `@fixer go on BL-1, keep it to the share handler, add a regression test`. The fixer branched,
-   wrote the failing test, guarded the division, ran `pytest -q` and ruff, opened
-   [PR #18](https://github.com/Ishaan2053/bugline/pull/18) titled `BL-1: ...`
-   ([fix-policy.md](switch/docs/fix-policy.md)). It now ends by handing the PR on:
-   `@reproducer please verify BL-1 on PR <link> (branch <name>)`. On Nov 4, before this step
-   existed, it posted `@frontdesk BL-1 is fixed: <PR link>` and the front desk closed the ticket
-   on that.
-   <!-- author: add screenshot of the fixer's PR message and the PR -->
-6. **Verify.** The reproducer fetches the PR into a local branch, reruns the scratch script that
-   proved the bug and `pytest -q`, goes back to `main`, and posts
-   `@frontdesk Verified BL-1: <PR link>`, or `Not verified BL-1: <why>`, which leaves the ticket
-   open for the PM ([repro-checklist.md, "Verify a fix"](switch/docs/repro-checklist.md#5-verify-a-fix)).
-   This is a second agent-to-agent hand-off over a Switch role with no person in the middle,
-   while the PM stays the only one who can start a fix. The front desk accepts the close only
-   from the reproducer or the room owner; anyone else who names a ticket is told who may close
-   it. Run live on Nov 5 (`BL-3`): fixer PR, reproducer `Verified`, close and the "fixed"
-   message in the support room took 70 s after the PM's approval.
-   <!-- author: add screenshot of the Verified line -->
-7. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
-   "Ishaan2053, BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/18". For `BL-2`, a
-   second user's duplicate report was matched to it, and both reporters got the message.
-   `@frontdesk status` in `bugline-eng` shows who closed each ticket. If the problem comes back,
-   anyone waiting on the ticket replies `still broken`; the front desk reopens it and hands it to
-   `@reproducer` again, with no model call. Run live on Nov 5: the reproducer reran its script
-   on `main` and posted `Verdict: reproduced` in the reopened thread.
-   <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
-
-**Ask the reporter.** At any point the PM (or anyone in `bugline-eng`) can write
-`@frontdesk ask BL-1: which browser were you on?` in the ticket's thread. The front desk posts the
-question to the reporter in their Telegram thread, and the reporter's next message to it comes
-back into that Slack thread, word for word, with no model call. The PM and the reporter never
-share a chat app. Run live on Nov 5 on `BL-3`.
-
-**Any language.** A reporter can write in Hindi, Hinglish or any other language. On Nov 5, `sam`
-wrote "bhai share link kholte hi error aa raha hai"; the front desk asked for the group id in
-Hinglish, and `BL-4` reached Slack in English with "Reporter: sam (bugline-support, wrote in
-Hinglish)". Each translated reply costs one lite-model call (`translate` in `calls.log`).
-
-PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
-
-The quiet paths (a question answered from the user guide, a request, a vague report, a duplicate,
-an off-topic message, a burst of messages, a report the reproducer could not reproduce) all ran
-live too. The exact messages are in
-[switch-setup.md, smoke run](docs/switch-setup.md#smoke-run-the-seeded-paths).
-
 ## The agents
 
 Three agents, one job each. Switch, not the agents, decides who may instruct each one.
@@ -396,67 +375,24 @@ across by hand, asks the user for the missing details, and forgets to tell them 
 Bugline moves only complete, new bugs across, gives each one a ticket id and a reproduction before
 a person looks at it, keeps the decision to change code with one named person, and tells every
 reporter when the fix is up. The demo app is an expense splitter, but the agents and scripts take
-its names from one file, `bugline.toml`; [Run it on your own repo](#run-it-on-your-own-repo) says
-what to change.
+its names from one file, `bugline.toml`; [docs/own-repo.md](docs/own-repo.md) says what to change.
 
-What one loop cost on Nov 4, from `agents/frontdesk/calls.log` and the coder logs:
+What a loop cost, from `agents/frontdesk/calls.log` and the coder logs:
 
 | Loop | Front desk Gemini calls | Claude Code runs | Verify | Report to "fixed" in Telegram |
 | --- | --- | --- | --- | --- |
 | `BL-1` (fault 1) | 2 (`gemini-3.5-flash-lite`, 3,053 tokens): the vague report, then the complete one | 3: reproducer 22 s (refused, see below), reproducer again 26 s, fixer 55 s | not in this run | 16 min 57 s, most of it the permission fix and restart between the two reproducer runs |
 | `BL-2` (fault 2) | 1 to open it, 2 more for the second user's duplicate (classify, duplicate check) | 2: reproducer 24 s, fixer 51 s | not in this run | 2 min 25 s, both reporters told |
+| `BL-3` (fault 1, Nov 5) | 2 | 3: reproduce, fix, verify | `Verified` by the reproducer | 70 s from the PM's approval |
+| `BL-5` (fault 2, Nov 5) | 2 (classify, duplicate check), after two HTTP 503s that the front desk waited out | 4: reproduce (the report's numbers were wrong: "not reproduced"), again on the PM's pointer, fix, verify | `Verified` by the reproducer | 78 s from the PM's approval |
 
-The verify step adds one more Claude Code run per loop and no Gemini call. These loops ran before
-it existed; its time is not measured yet (a reproduction took 22 to 26 s).
-
-The whole smoke run, every seeded path, took 13 Gemini calls. The target was under 25 per loop.
-
-### Run it on your own repo
-
-`bugline.toml` at the repo root names the project the agents work on. The expense splitter is the
-shipped value. The front desk, the coders and `scripts/bootstrap.py` all read it, and
-`agents/common/project.py` checks it at start and names any bad key. To point Bugline at your app:
-
-1. Copy `bugline.toml` and change `[project]`: the repo URL and branch, the folder each coder
-   clones it into, where the app sits in the clone, the test command, the scratch folder the
-   reproducer may write to, the files neither coder may edit, and the user guide the front desk
-   answers from (a file on this machine, relative to the TOML file).
-2. Change `[report]`: the fields a complete bug report needs. The front desk asks for a missing
-   field by its `label` and lists it on the ticket under its `heading`. `title` must stay.
-3. Change `[tickets] prefix` (1 to 5 capital letters) and the room and agent names if you want.
-4. Point `BUGLINE_CONFIG` at your file in every shell that runs an agent or a script. It is read
-   from the shell, not from the agents' `.env` files.
-5. Clone your repo into each coder's working directory as `<CODER_WORKDIR>\<clone_dir>`, then run
-   `scripts/bootstrap.py`. It fills the room instructions and documents with your names and
-   passes your repo URL to the room template.
-
-```powershell
-$env:BUGLINE_CONFIG = "C:\path\to\my-app.toml"
-python scripts\bootstrap.py --dry-run
-```
-
-```bash
-export BUGLINE_CONFIG=~/my-app.toml
-python scripts/bootstrap.py --dry-run
-```
-
-What still assumes the demo:
-
-- Nothing in the code assumes Python: the test command is a shell line.
-- `switch/docs/repro-checklist.md` sets up a Python venv and writes the scratch script with
-  FastAPI's `TestClient`; `switch/docs/fix-policy.md` names the demo's layout (`app/`, `SCHEMA`,
-  `seed.py`) and runs ruff. Edit both for another stack.
-- The examples of each kind of message in `switch/docs/intake-rules.md` come from the expense
-  splitter. Replace them with your app's.
-- The seeded faults, `scripts/reset_demo.py` and the `demo-app` service in `docker-compose.yml`
-  are the demo.
-- The defaults inside `switch/*.template.yaml` still name the demo, because Switch reads those
-  files without `bugline.toml`. Bootstrap passes every value as an input, so they only matter if
-  you import a template by hand.
+`BL-1` and `BL-2` ran before the verify step existed; it adds one Claude Code run and no Gemini
+call. The Nov 4 smoke run, every seeded path, took 13 Gemini calls. The target was under 25 per
+loop.
 
 ## What the agents got wrong and how the briefs fixed it
 
-From the live run on Nov 4:
+From the live runs on Nov 4 and 5:
 
 - **The reproducer could not run a single command.** Its first try at `BL-1` replied "every
   command, even `git status`, was refused". Claude Code chains shell commands
@@ -480,20 +416,22 @@ From the live run on Nov 4:
 - **The front desk replied in the wrong thread.** It passed the id of the message that addressed it
   as the thread, not the thread's root, so a reply to a reply did not land in the ticket's thread.
   It now replies in the root (`IncomingMessage.thread_root`).
+- **A refusal woke the reproducer.** The front desk's reply "Only @reproducer or the room owner
+  can close a ticket" mentioned the role, Switch addressed it, and the reproducer started a
+  Claude Code run for nothing. The front desk's replies no longer name a role, and a test checks
+  every one.
+- **The reproducer could not write its scratch script.** Claude Code reads a relative path rule
+  against the shell's current directory, so after `cd demo-app` the rule
+  `Edit(demo-app/scratch/**)` stopped matching, and so did the fixer's rule that protects
+  `seed.py`. The rules are now absolute paths under each clone; a probe with the real command
+  line showed the write allowed and the `seed.py` edit refused after a `cd`.
+- **A busy model meant silence.** Gemini answered 503 "high demand" and the reporter got no
+  reply, because only 429 was retried. 503 is now waited out the same way (it happened twice
+  on `BL-5`, unseen by the user), and any other error gets "Something went wrong on my side".
 
-From reading the Switch docs and server source before the live run:
-
-- One WebSocket covers one room, so the front desk holds two, and each op call carries the
-  connection id of its room.
-- `post_message` takes no mentions, and events carry no mentions list. Handoffs use
-  `send_targeted_message`, and the front desk reads `BL-n` and the PR link from the body, which is
-  why [fix-policy.md](switch/docs/fix-policy.md) fixes the shape of the fixer's done message.
-- An agent cannot open itself to "anyone" (403), and templates offer only three access presets.
-  Both rules are set on the agent by its owner; bootstrap does it through the Gateway API.
-- `@frontdesk` became a per-room alias, not a role, because an agent holds one role everywhere.
-- `gemini-2.5-flash-lite` returned 404 for new users; the lite model is `gemini-3.5-flash-lite`.
-
-The day-by-day record is in [docs/build-journal.md](docs/build-journal.md).
+What reading the Switch docs and server source changed before the first run is in
+[switch-setup.md](docs/switch-setup.md#what-the-switch-docs-and-server-source-changed). The
+day-by-day record is in [docs/build-journal.md](docs/build-journal.md).
 
 ## Built with Wispr Flow
 
@@ -514,9 +452,11 @@ agents/coder/        the reproducer and the fixer: one program that runs Claude 
 switch/              room templates, room instructions, docs/ (the bugline-kit documents), agent-briefs/
 scripts/             bootstrap.py: everything in Switch after the chat-app connections, idempotent;
                      doctor.py: checks before a recording; reset_demo.py: back to BL-1
-docs/                switch-setup.md (Switch walkthrough and troubleshooting), build-journal.md
+docs/                switch-setup.md (Switch walkthrough, other chat apps, troubleshooting),
+                     own-repo.md, build-journal.md
 docker-compose.yml   demo app; front desk under the `agents` profile
-CLAUDE.md            project context for coding agents, including the seeded-faults table
+CLAUDE.md, AGENTS.md instructions for the coding agents used to build this repo; Bugline's own
+                     agents do not read them
 ```
 
 ## Tests and CI
@@ -530,7 +470,8 @@ faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
 
 - The limit of 5 open tickets per user is unit-tested but was not hit in the live run.
 - `scripts/bootstrap.py` set up a second copy from nothing on Nov 5 (new agents, rooms, rules,
-  links and kit, on Mattermost; see the variant above), but on a server that already had the demo,
+  links and kit, on [Mattermost](docs/switch-setup.md#mattermost-only-no-telegram-or-slack)), but on
+  a server that already had the demo,
   not on a newly installed Switch.
 - The second user in the live run (`sam`) posted through the Gateway chat API, not from a second
   Telegram or Slack account. The refusal wording for an unlinked chat account may differ

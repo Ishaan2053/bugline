@@ -1,8 +1,8 @@
 # Expense splitter (Bugline demo app)
 
 A small FastAPI + SQLite app for splitting trip expenses in a group. It is the codebase the Bugline
-agents reproduce and fix bugs in. See the [repo CLAUDE.md](../CLAUDE.md#demo-app-expense-splitter-demo-app)
-for how it fits into the project.
+agents reproduce and fix bugs in. See the [repo README](../README.md) for how it fits into the
+project.
 
 ## Run it
 
@@ -91,7 +91,7 @@ without a login. The seeded group's link is `/share/goa-trip-share`.
 
 This app has faults planted on purpose for the Bugline demo. Do not fix them outside the fixer's
 demo run. The full list, with what a user sees and the expected path through the agents, is the
-seeded-faults table in [CLAUDE.md](../CLAUDE.md#demo-app-expense-splitter-demo-app). Faults 1 and 2
+[seeded-faults table](../README.md#seeded-faults) in the repo README. Faults 1 and 2
 live in this app; there are deliberately no tests for them yet.
 
 What faults 1 and 2 look like on the seeded "Goa trip" group:

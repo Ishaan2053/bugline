@@ -314,9 +314,10 @@ Each heading's first sentence answers its criterion.
 1. Bugline — one paragraph + GIF
 2. Why this stops working without Switch (Use of Switch)
 3. Architecture (diagram)
-4. Reproduce it in 15 minutes (Technical execution): prerequisites, `docker compose up`, template
-   import, env vars, Telegram and Slack connection steps — every command copied from a real run
-5. The workflow, step by step, with screenshots
+4. The workflow, step by step, with screenshots (a judge sees how Switch is used before setup)
+5. Reproduce it (Technical execution): prerequisites, `docker compose up`, fork, env vars,
+   Telegram and Slack connection steps — every command copied from a real run. Side material
+   (the Mattermost variant, running on another repo) lives in `docs/`, not the README
 6. The agents: runtime, role, access rule, link to each brief
 7. The problem this solves for a real team (Creativity and impact)
 8. What the agents got wrong and how the briefs fixed it

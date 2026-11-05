@@ -6,8 +6,8 @@ in Telegram, Slack and Switch Console. Part B is one script. Part C starts the a
 Parts A and C and the smoke run were done live on Nov 4, 2026, with Switch Console 0.40.1 and
 server switch-core 0.31.0 on Windows 11. That day the part B steps were done with single Gateway
 API calls; `scripts/bootstrap.py` was written from those calls and then run against the finished
-setup, where it found everything and added `bugline-kit`. Its create paths are covered by unit
-tests against a fake server, not by a fresh server.
+setup, where it found everything and added `bugline-kit`. On Nov 5 it set up a second copy from
+nothing, from a fresh clone, on the same server ([Mattermost only](#mattermost-only-no-telegram-or-slack)).
 
 What goes where:
 
@@ -174,10 +174,52 @@ so it follows too.
   connects it as `Mattermost`; on the author's server it was `active`, with channel creation on.
   It is at `http://localhost:<port>`, the port being `mattermost` in Console's `ports.json`.
   `--support-bridge mattermost --eng-bridge mattermost` makes both rooms there and needs no
-  Telegram or Slack account; see the README's Mattermost variant. One full loop ran there on
+  Telegram or Slack account; see [Mattermost only](#mattermost-only-no-telegram-or-slack). One full loop ran there on
   Nov 5, from a fresh clone with its own `bugline.toml`.
 - **Discord, Microsoft Teams.** Switch can create channels on both, so the same flags should work
   (`--support-bridge <type>`, with the type as `GET /gateway/collaborations` shows it). Untested.
+
+### Mattermost only, no Telegram or Slack
+
+**Run once, on Nov 5.** The author's demo runs on Telegram and Slack. This variant was run from a
+fresh clone, on the same server as the demo, with a second `bugline.toml` (`bltest-*` rooms and
+agents, tickets `BT-n`, both bridges `mattermost`). Bootstrap made everything in one run, a
+second run changed nothing, and `doctor.py` passed every check. Then: a vague report, the
+question for the group id, `BT-1` in the eng room, reproduced; a second Switch user's `@fixer`
+refused; the owner's approval, fixer PR, reproducer `Verified`, and "fixed" back in the support
+room, under 2 minutes after approval. The users' messages went in through the Gateway chat API,
+as Admin and a second Switch user, not typed in Mattermost's web app.
+
+Switch Console starts a Mattermost server along with its local server (in Docker, so Docker
+must be running) and connects it as the messaging app `Mattermost`. Switch can create channels
+there, so bootstrap makes both rooms, `bugline-support` from
+[`switch/bugline-support.template.yaml`](../switch/bugline-support.template.yaml) and `bugline-eng`
+from [`switch/bugline.template.yaml`](../switch/bugline.template.yaml). You need no Telegram bot and
+no Slack app:
+
+- Skip part A. Do step 4. In step 5, add two flags:
+
+  ```powershell
+  agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --support-bridge mattermost --eng-bridge mattermost
+  ```
+
+  ```bash
+  agents/frontdesk/.venv/bin/python scripts/bootstrap.py --support-bridge mattermost --eng-bridge mattermost
+  ```
+
+- Do step 6. Open Mattermost from Console Home, or at `http://localhost:<port>`, where the port
+  is `mattermost` in Console's `ports.json`. Both rooms are channels there; type
+  `!follow-ups off` in each.
+- The end user is a second Mattermost account (Console's Mattermost allows sign-up from its
+  sign-in page). The same account tests the gate: `@fixer` from it should be refused, because
+  the fixer's access rule admits only its owner. For a second Switch user the refusal read as it
+  does on Slack; a Mattermost account that is not linked to a Switch user was not tried.
+
+The flags are not saved. Bootstrap run again without them goes back to Telegram and Slack and
+rewrites the room ids in both `.env` files and the fixer's access rule. To keep Mattermost, set
+`BUGLINE_SUPPORT_BRIDGE=mattermost` and `BUGLINE_ENG_BRIDGE=mattermost` in
+`agents/frontdesk/.env`. Other chat apps where Switch can create channels (Discord, Teams) take
+the same flags; see [Other chat apps](#other-chat-apps).
 
 ## Part C: start the agents
 
@@ -333,6 +375,20 @@ Expect: `Verdict: not reproduced`, what it tried, and a request for what the use
 `@fixer go on BL-2, keep it to the equal split in demo-app/app/money.py so the shares add up to the amount, and add a regression test`.
 Expect a PR, the reproducer's `Verified BL-2`, then "BL-2 is fixed" in `bugline-support` for both
 the reporter and the second user.
+
+## What the Switch docs and server source changed
+
+Read before the first live run:
+
+- One WebSocket covers one room, so the front desk holds two, and each op call carries the
+  connection id of its room.
+- `post_message` takes no mentions, and events carry no mentions list. Handoffs use
+  `send_targeted_message`, and the front desk reads `BL-n` and the PR link from the body, which is
+  why [fix-policy.md](../switch/docs/fix-policy.md) fixes the shape of the fixer's done message.
+- An agent cannot open itself to "anyone" (403), and templates offer only three access presets.
+  Both rules are set on the agent by its owner; bootstrap does it through the Gateway API.
+- `@frontdesk` became a per-room alias, not a role, because an agent holds one role everywhere.
+- `gemini-2.5-flash-lite` returned 404 for new users; the lite model is `gemini-3.5-flash-lite`.
 
 ## Troubleshooting
 

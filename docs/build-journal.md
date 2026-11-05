@@ -162,3 +162,36 @@ clone with its own `bugline.toml` (`bltest-support` / `bltest-eng`, agents `blte
   noticed, tried both tokens, and reproduced on the real one.
 - On this machine `py -3.14` finds nothing, because Python 3.14 came from uv; the venvs were made
   with that interpreter's full path.
+
+## 2026-11-05 (night): an outside read, seven fixes, one more live loop
+
+Three fresh reviewers read the repo: two for bugs, one as a judge would. Each finding below was
+checked against the code or a live probe before anything changed.
+
+- PR #43, the coders:
+  - Path rules are now absolute under each clone. A probe with the real command line showed
+    `cd demo-app` followed by a write to `demo-app/scratch/` denied, which explains the
+    "not allowed to write" lines on `BL-4` and `BT-1`. The same `cd` had switched off the
+    fixer's `seed.py` deny rule; after the fix that edit is refused.
+  - `--setting-sources local`. A probe showed the repo's own CLAUDE.md, our build rules, in
+    every coder run.
+  - The checklist no longer tells the fixer to work in the reproducer's folder.
+- PR #44, the front desk:
+  - Closing a ticket drops its unanswered `ask` questions; before, they swallowed `still broken`.
+  - A non-bug message, or 30 minutes, drops an unfinished draft.
+  - Any routing error gets a reply.
+  - A rate-limited duplicate check keeps the complete report.
+- Live loop on fault 2 (`BL-5`):
+  - My report had the wrong numbers, and the reproducer answered `not reproduced`. That was
+    right: the transfers do add up.
+  - Pointed at `/groups/1/balances` by the PM, it reproduced 9099.99 of 9100.00.
+  - Fixer PR #45, `Verified`, closed, "fixed" in Telegram: 78 s from approval. PR #45 was
+    closed unmerged.
+  - `calls.log` shows two 503s on the classify call, waited out by #39 with no reply lost.
+  - The reproducer wrote `scratch/bl_5.py`, and neither coder logged a refused tool call.
+- README:
+  - The workflow now comes before setup.
+  - The faults table moved out of CLAUDE.md, and the test counts and Nov 5 numbers are current.
+  - Part B has a fork step and a line for non-Windows setups.
+  - The Mattermost variant and the Switch-docs lessons moved to `docs/switch-setup.md`, and
+    "Run it on your own repo" moved to `docs/own-repo.md`.
