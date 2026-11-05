@@ -118,7 +118,7 @@ Each run is:
 ```
 claude -p --output-format json --no-session-persistence
   --append-system-prompt-file state/<agent name>/brief.md
-  --setting-sources project,local --settings {"attribution": {"commit": "", "pr": ""}}
+  --setting-sources local --settings {"attribution": {"commit": "", "pr": ""}}
   --permission-mode dontAsk --tools Read,Glob,Grep,Edit,Write,Bash
   --allowedTools <the role's list> --disallowedTools <the deny list>
 ```
@@ -127,9 +127,17 @@ with the prompt on stdin, in `<workdir>\bugline`. The lists are in `config.py`.
 
 - `--permission-mode dontAsk`: anything not on the allow list is refused at once. Nobody is there
   to answer a prompt, and a run never hangs waiting for one.
-- `--setting-sources project,local` leaves out the operator's own `~/.claude/settings.json`, so
-  their personal allow rules do not widen the agent's. Without it, a test run of the reproducer
-  could run `git push`, because the author's user settings allow it.
+- `--setting-sources local` leaves out the operator's own `~/.claude/settings.json`, so their
+  personal allow rules do not widen the agent's. Without it, a test run of the reproducer could run
+  `git push`, because the author's user settings allow it. It also leaves out the clone's
+  `CLAUDE.md`, which is written for the repo's developers; this repo's said "stop and ask before
+  overwriting a branch", which a verify run does. A probe confirmed both: with `project,local` the
+  run had this repo's CLAUDE.md in context, with `local` it did not.
+- Path rules are written relative to the repo root in `config.py` and passed as absolute paths
+  under the clone (`Edit(//c/bugline-agents/bugline-repro/bugline/demo-app/scratch/**)`). Claude
+  Code reads a relative rule against the shell's current directory, so after `cd demo-app` the
+  reproducer could not write its scratch script, and the fixer's `seed.py` rule did not match.
+  An `Edit` rule also covers the Write tool.
 - `--tools` hides the tools neither agent needs (web, PowerShell, subagents).
 - Both roles may run any shell command in the clone. Claude Code chains commands
   (`cd demo-app && ... | tail -3; mkdir -p scratch`), and in `dontAsk` mode every part of a chain

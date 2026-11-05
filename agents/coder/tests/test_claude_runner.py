@@ -32,8 +32,12 @@ def test_command_appends_the_brief_and_allows_only_the_roles_tools(settings) -> 
     assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
     allowed = cmd[cmd.index("--allowedTools") + 1 : cmd.index("--disallowedTools")]
     denied = cmd[cmd.index("--disallowedTools") + 1 :]
-    assert "Bash" in allowed and "Edit(demo-app/scratch/**)" in allowed
-    assert "Edit(**)" not in allowed
+    clone = config.anchored("Edit(x)", settings.clone).removesuffix("/x)")  # "Edit(//<clone>"
+    assert "Bash" in allowed and f"{clone}/demo-app/scratch/**)" in allowed
+    assert not [rule for rule in allowed if rule.endswith("/**)") and "scratch" not in rule]
+    assert f"{clone}/demo-app/seed.py)" in denied  # deny rules are anchored too
+    # Only this file's settings: no user settings, no project CLAUDE.md.
+    assert cmd[cmd.index("--setting-sources") + 1] == "local"
     # The reproducer never changes the repo; both roles are refused the dangerous git commands.
     assert {"Bash(git push*)", "Bash(git commit*)", "Bash(gh *)"} <= set(denied)
     assert "Bash(gh pr merge *)" in denied

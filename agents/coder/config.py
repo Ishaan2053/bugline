@@ -7,9 +7,10 @@ same thing.
 """
 
 import os
+import re
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from common.conventions import FIXER_ROLE, REPRODUCER_ROLE
 from common.env import load_env_file, require_env
@@ -62,8 +63,13 @@ THREAD_READ_LIMIT = 100  # timeline entries read when looking for the message's 
 # Git Bash. Anything not allowed below is refused without a prompt (--permission-mode dontAsk).
 TOOLS = ("Read", "Glob", "Grep", "Edit", "Write", "Bash")
 
-# Claude Code runs inside the agent's clone (<workdir>/<clone_dir>), so paths below are relative to
-# the repo root. The paths and the default branch come from bugline.toml.
+# Claude Code runs inside the agent's clone (<workdir>/<clone_dir>). Paths below are written
+# relative to the repo root, and `anchored` makes them absolute under the clone when the command is
+# built: Claude Code reads a relative path rule against the shell's current directory, so after the
+# agent runs `cd demo-app` a rule like `Edit(demo-app/scratch/**)` stops matching (seen live: the
+# reproducer could not write its scratch script). An Edit rule also covers the Write tool; a
+# Write(<path>) rule alone allows nothing (Claude Code 2.1.318), so there are none. The paths and
+# the default branch come from bugline.toml.
 #
 # Both roles may run any shell command. Claude Code chains commands (`cd <app> && ... | tail`)
 # and in dontAsk mode every part of a chain must be allowed, so a list of single commands refused
@@ -72,15 +78,11 @@ TOOLS = ("Read", "Glob", "Grep", "Edit", "Write", "Bash")
 _READ_AND_RUN = ("Read", "Glob", "Grep", "Bash")
 
 # The reproducer writes only scratch scripts (switch/docs/repro-checklist.md).
-REPRODUCER_ALLOWED = (
-    *_READ_AND_RUN,
-    f"Edit({PROJECT.scratch_dir}/**)",
-    f"Write({PROJECT.scratch_dir}/**)",
-)
+REPRODUCER_ALLOWED = (*_READ_AND_RUN, f"Edit({PROJECT.scratch_dir}/**)")
 
 # The fixer edits the clone, commits, pushes its branch and opens the PR
 # (switch/docs/fix-policy.md).
-FIXER_ALLOWED = (*_READ_AND_RUN, "Edit(**)", "Write(**)")
+FIXER_ALLOWED = (*_READ_AND_RUN, "Edit(**)")
 
 # Passed with --settings. Commits and PRs carry no AI attribution (switch/docs/fix-policy.md).
 CLAUDE_SETTINGS = {"attribution": {"commit": "", "pr": ""}}
@@ -106,6 +108,22 @@ DENIED = (
     "Bash(gh pr merge *)",
     *(f"Edit({path})" for path in PROJECT.protected_paths),
 )
+
+
+def anchored(rule: str, root: PurePath) -> str:
+    """`Edit(<path>)` with <path> made absolute under `root`; any other rule unchanged.
+
+    Claude Code writes an absolute path as `//` plus the path from the filesystem root, and on
+    Windows the drive as a lower-case letter: C:\\work\\x becomes //c/work/x.
+    """
+    match = re.fullmatch(r"Edit\((.+)\)", rule)
+    if not match:
+        return rule
+    if root.drive:  # C:\work -> c/work
+        base = root.drive[0].lower() + root.as_posix()[len(root.drive) :]
+    else:
+        base = root.as_posix().lstrip("/")
+    return f"Edit(//{base}/{match.group(1)})"
 
 
 @dataclass(frozen=True)

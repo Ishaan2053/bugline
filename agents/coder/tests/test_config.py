@@ -1,7 +1,7 @@
 """Tests for the coder's settings: the default working directory on each platform."""
 
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -28,6 +28,18 @@ def test_workdir_defaults_to_the_c_drive_on_windows(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
 
     assert config.settings("fixer").workdir == Path(r"C:\bugline-agents") / "bugline-fixer"
+
+
+def test_path_rules_are_anchored_to_the_clone() -> None:
+    windows = PureWindowsPath(r"C:\bugline-agents\bugline-repro\bugline")
+    posix = PurePosixPath("/home/me/bugline-agents/bugline-repro/bugline")
+    assert config.anchored("Edit(demo-app/scratch/**)", windows) == (
+        "Edit(//c/bugline-agents/bugline-repro/bugline/demo-app/scratch/**)"
+    )
+    assert config.anchored("Edit(**/*.db)", posix) == (
+        "Edit(//home/me/bugline-agents/bugline-repro/bugline/**/*.db)"
+    )
+    assert config.anchored("Bash(git push*)", windows) == "Bash(git push*)"
 
 
 def test_coder_workdir_wins_over_the_default(monkeypatch, tmp_path) -> None:
