@@ -15,12 +15,13 @@ from config import (
     PR_URL_RE,
     PROJECT,
     REPRODUCER_ROLE,
+    REQUESTS_COMMAND,
     ROOM_NAMES,
     ROOM_SUPPORT,
     STATUS_COMMAND,
     TICKET_PREFIX,
 )
-from store import Subscriber, Ticket
+from store import Request, Subscriber, Ticket
 
 # What each report field is called when the front desk asks for it (bugline.toml, `label`).
 FIELD_LABELS = {f.name: f.label for f in PROJECT.fields}
@@ -59,12 +60,14 @@ _CLOSE_LINE = f"`Verified {TICKET_PREFIX}-n: <PR link>`"
 ENG_HELP = (
     f"I bring bug reports here and close them when @{REPRODUCER_ROLE} posts {_CLOSE_LINE}."
     f" `{STATUS_COMMAND}` lists the tickets, `{STATUS_COMMAND} {TICKET_PREFIX}-n` shows one,"
-    f" `{ASK_COMMAND} {TICKET_PREFIX}-n: <question>` asks its reporter."
+    f" `{ASK_COMMAND} {TICKET_PREFIX}-n: <question>` asks its reporter,"
+    f" `{REQUESTS_COMMAND}` lists feature requests."
 )
 NOT_VERIFIER = f"Only @{REPRODUCER_ROLE} or the room owner can close a ticket, with {_CLOSE_LINE}."
 CLOSE_FORMAT = f"To close a ticket, post {_CLOSE_LINE} with the full PR link."
 STAYS_OPEN = "{ticket_id} stays open. PM, the reason is in this thread; you decide what is next."
 NO_TICKETS = "No tickets yet."
+NO_REQUESTS = "No feature requests yet."
 UNKNOWN_TICKET = "There is no ticket {ticket_id}."
 ASKED = "Asked {name} in {room}. Their answer will come to this thread."
 ASK_CLOSED = "{ticket_id} is closed, so I won't ask the reporter."
@@ -129,6 +132,19 @@ def status_board(
     return "\n".join(lines)
 
 
+def request_list(requests: Sequence[Request], now: datetime, total: int) -> str:
+    """Feature requests, newest first: `#3 · 2 h · Asha: <text>`, then `+n more` if cut."""
+    if not requests:
+        return NO_REQUESTS
+    lines = [
+        f"#{r.id} · {_since(r.created_at, now)} · {r.name or 'someone'}: {_one_line(r.text)}"
+        for r in requests
+    ]
+    if total > len(requests):
+        lines.append(f"+{total - len(requests)} more")
+    return "\n".join(lines)
+
+
 def status_one(ticket: Ticket, subscribers: Sequence[Subscriber], now: datetime) -> str:
     """One ticket in full: state, who is waiting on it, the report, and when it opened/closed."""
     if ticket.status == "closed":
@@ -173,7 +189,12 @@ def _closed_note(ticket: Ticket) -> str:
 def _age(ticket: Ticket, now: datetime) -> str:
     """How long the ticket was open: until it closed, or until `now` while it is open."""
     end = datetime.fromisoformat(ticket.closed_at) if ticket.closed_at else now
-    minutes = int((end - datetime.fromisoformat(ticket.created_at)).total_seconds() // 60)
+    return _since(ticket.created_at, end)
+
+
+def _since(iso: str, end: datetime) -> str:
+    """The time from a stored timestamp to `end`: `12 min`, `5 h` or `3 d`."""
+    minutes = int((end - datetime.fromisoformat(iso)).total_seconds() // 60)
     if minutes < 60:
         return f"{minutes} min"
     hours = minutes // 60

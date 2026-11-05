@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS requests (
     user_id    TEXT NOT NULL,
     room_id    TEXT NOT NULL,
     text       TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    name       TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS muted_threads (
     room_id   TEXT NOT NULL,
@@ -111,6 +112,15 @@ class Subscriber(NamedTuple):
     thread_id: str | None = None
 
 
+class Request(NamedTuple):
+    """A feature request from the support room, as the eng room's `requests` list shows it."""
+
+    id: int
+    name: str
+    text: str
+    created_at: str
+
+
 class Question(NamedTuple):
     """A question from the eng room waiting for the reporter's answer.
 
@@ -142,14 +152,19 @@ class Store:
         self._clock = clock
 
     def _add_missing_columns(self) -> None:
-        """Bring a frontdesk.db made before `closed_by` existed up to SCHEMA.
+        """Bring a frontdesk.db made before a column existed up to SCHEMA.
 
         CREATE TABLE IF NOT EXISTS leaves an existing table as it is, so a new column needs this.
         """
-        columns = {row["name"] for row in self._db.execute("PRAGMA table_info(tickets)")}
-        if "closed_by" not in columns:
-            with self._db:
-                self._db.execute("ALTER TABLE tickets ADD COLUMN closed_by TEXT")
+        added = (
+            ("tickets", "closed_by", "TEXT"),
+            ("requests", "name", "TEXT NOT NULL DEFAULT ''"),
+        )
+        for table, column, kind in added:
+            columns = {row["name"] for row in self._db.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                with self._db:
+                    self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
     def close(self) -> None:
         self._db.close()
@@ -350,14 +365,26 @@ class Store:
 
     # --- requests and muted threads -------------------------------------------------------------
 
-    def log_request(self, user_id: str, room_id: str, text: str) -> int:
-        """Keep a feature request for later. Requests are not escalated during the hackathon."""
+    def log_request(self, user_id: str, room_id: str, text: str, name: str = "") -> int:
+        """Keep a feature request. It is not handed over; the eng room reads it with `requests`."""
         with self._db:
             cursor = self._db.execute(
-                "INSERT INTO requests (user_id, room_id, text, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, room_id, text, self._iso_now()),
+                "INSERT INTO requests (user_id, room_id, text, created_at, name)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (user_id, room_id, text, self._iso_now(), name),
             )
         return cursor.lastrowid or 0
+
+    def list_requests(self, limit: int) -> list[Request]:
+        """The newest `limit` requests, newest first."""
+        rows = self._db.execute(
+            "SELECT id, name, text, created_at FROM requests ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [Request(*row) for row in rows]
+
+    def count_requests(self) -> int:
+        (count,) = self._db.execute("SELECT COUNT(*) FROM requests").fetchone()
+        return count
 
     def mute(self, room_id: str, thread_id: str) -> None:
         """Stop engaging with an off-topic thread: no replies and no model calls."""

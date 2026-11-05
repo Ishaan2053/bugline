@@ -146,3 +146,18 @@ def test_a_database_without_closed_by_gets_the_column(tmp_path) -> None:
     assert store.get_ticket("BL-1").closed_by is None  # type: ignore[union-attr]
     store.close()
     Store(path).close()  # a second start finds the column and changes nothing
+
+
+def test_a_database_from_before_request_names_gets_the_column(tmp_path) -> None:
+    old = tmp_path / "old.db"
+    with sqlite3.connect(old) as db:
+        db.execute(
+            "CREATE TABLE requests (id INTEGER PRIMARY KEY, user_id TEXT NOT NULL,"
+            " room_id TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL)"
+        )
+        db.execute("INSERT INTO requests VALUES (1, 'u1', 'r', 'CSV', '2026-11-04T10:00:00+00:00')")
+    store = Store(old)
+    assert store.list_requests(5)[0].name == ""
+    store.log_request("u2", "r", "Dark mode", "Ravi")
+    assert [r.name for r in store.list_requests(5)] == ["Ravi", ""]
+    store.close()

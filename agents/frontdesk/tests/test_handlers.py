@@ -439,3 +439,18 @@ def test_reopen_needs_a_closed_ticket_the_sender_waits_on(store: Store) -> None:
     again = FakeModels(kind("question"))
     handle(msg("@frontdesk reopen BL-1", n=4), store, again)  # already open
     assert again.calls[0][0] == "classify"
+
+
+def test_requests_lists_what_the_support_room_asked_for(store: Store) -> None:
+    assert handle(eng("@frontdesk requests"), store, FakeModels())[0].body == messages.NO_REQUESTS
+    handle(msg("@frontdesk please add CSV export", n=1), store, FakeModels(kind("request")))
+    store.now[0] += 2 * 3600  # type: ignore[attr-defined]
+    handle(msg("@frontdesk dark mode\nplease", user="u2", n=2), store, FakeModels(kind("request")))
+
+    (posts,) = handle(eng("@frontdesk Requests"), store, FakeModels())
+
+    assert posts == Post(
+        config.ROOM_ENG,
+        "#2 · 0 min · Ravi: dark mode; please\n#1 · 2 h · Asha: please add CSV export",
+        thread_id="m9",
+    )
