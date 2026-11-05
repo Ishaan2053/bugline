@@ -34,6 +34,7 @@ TOO_MANY_OPEN = (
 )
 COOLDOWN = "Give me a minute, then send that again."
 RATE_LIMITED = "I'm rate-limited right now. Please send that again in a minute."
+SOMETHING_WRONG = "Something went wrong on my side. Please send that again in a minute."
 OFF_TOPIC = "Sorry, that's not something I can help with here."
 REQUEST_LOGGED = "Thanks, I've noted that as a request for the team."
 TRACKED = "Already tracked as {ticket_id}, I'll tell you when it's fixed."

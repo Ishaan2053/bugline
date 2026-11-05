@@ -126,11 +126,16 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
         return _route(msg, text, store, models)
     except RateLimited:
         return [_reply(msg, messages.RATE_LIMITED)]
+    except Exception:  # a model error, a timeout, bad JSON: say so rather than go quiet
+        log.exception("could not route a message from %s", msg.sender_name or msg.sender_id)
+        return [_reply(msg, messages.SOMETHING_WRONG)]
 
 
 def _route(msg: IncomingMessage, text: str, store: Store, models: Models) -> list[Post]:
     result = models.classify(text, store.get_draft(msg.room_id, msg.sender_id))
     store.set_language(msg.sender_id, result.language)
+    if result.kind != "bug":  # an unfinished report is not continued by a later bug report
+        store.clear_draft(msg.room_id, msg.sender_id)
     if result.kind == "question":  # the answer prompt replies in the question's language
         return [_reply(msg, models.answer_question(text))]
     if result.kind == "request":
@@ -147,9 +152,11 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
     if result.missing:
         store.save_draft(msg.room_id, msg.sender_id, asdict(report), result.missing)
         return [_say(msg, messages.ask_missing(result.missing), store, models)]
-    store.clear_draft(msg.room_id, msg.sender_id)
-
+    # Keep the complete report as the draft until the duplicate check is done: if that call is
+    # rate-limited, the user's resend continues this report instead of starting over.
+    store.save_draft(msg.room_id, msg.sender_id, asdict(report), [])
     duplicate_of = models.check_duplicate(report, store.open_tickets())
+    store.clear_draft(msg.room_id, msg.sender_id)
     if duplicate_of:
         store.subscribe(duplicate_of, msg.sender_id, msg.room_id, msg.sender_name, msg.thread_root)
         return [_say(msg, messages.TRACKED.format(ticket_id=duplicate_of), store, models)]
