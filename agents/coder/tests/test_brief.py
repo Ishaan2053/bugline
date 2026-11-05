@@ -85,7 +85,7 @@ def test_another_bugline_toml_changes_names_paths_and_the_brief(tmp_path) -> Non
 
     assert out["name"] == "qa-repro"
     assert Path(out["clone"]).parts[-2:] == ("qa-repro", "notes")
-    assert "Write(demo-app/tmp/**)" in out["allowed"]
+    assert "Edit(demo-app/tmp/**)" in out["allowed"]
     assert "Edit(demo-app/seed.py)" in out["denied"]
     assert "Verified QA-<n>: <PR url>" in out["brief"]
     assert "demo-app/tmp/qa_<n>.py" in out["brief"] and "npm test" in out["brief"]

@@ -6,8 +6,7 @@ ticket's thread.
 
 ## 1. Environment
 
-Work in your own working directory (`$reproducer_workdir`). Never in someone else's
-checkout.
+Work in your own clone; each run starts in it. Never in someone else's checkout.
 
 First time:
 
@@ -19,10 +18,9 @@ py -3.14 -m venv .venv
 pip install -r requirements-dev.txt
 ```
 
-Every ticket, before anything else:
+Every ticket, before anything else, from the clone's root:
 
 ```powershell
-cd $clone_dir
 git checkout $default_branch
 git pull --ff-only
 cd $app_dir

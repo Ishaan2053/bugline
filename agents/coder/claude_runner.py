@@ -59,10 +59,12 @@ def claude_command(settings: config.Settings, claude_path: str) -> list[str]:
         "--no-session-persistence",  # every job starts clean; the thread is in the prompt
         "--append-system-prompt-file",
         str(settings.brief),
-        # Skip the operator's own user settings (their allow rules, plugins, model), so the
-        # rules below are the only permissions, on any machine.
+        # Skip the operator's user settings (their allow rules, plugins, model), so the rules
+        # below are the only permissions, on any machine. Skip the project source too: it loads
+        # the clone's CLAUDE.md, which is written for the repo's developers (this repo's says to
+        # stop and ask before overwriting a branch), and the brief is the coder's only instruction.
         "--setting-sources",
-        "project,local",
+        "local",
         "--settings",
         json.dumps(config.CLAUDE_SETTINGS),
         "--permission-mode",
@@ -70,9 +72,9 @@ def claude_command(settings: config.Settings, claude_path: str) -> list[str]:
         "--tools",
         ",".join(config.TOOLS),
         "--allowedTools",
-        *settings.allowed_tools,
+        *(config.anchored(rule, settings.clone) for rule in settings.allowed_tools),
         "--disallowedTools",
-        *settings.denied_tools,
+        *(config.anchored(rule, settings.clone) for rule in settings.denied_tools),
     ]
 
 
