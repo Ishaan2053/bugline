@@ -44,6 +44,10 @@ eng = "bugline-eng"
 # the environment override these, and bootstrap's --support-bridge / --eng-bridge override both.
 support_bridge = "telegram"
 eng_bridge = "slack"
+# Who may tell @fixer to go, besides the owner: usernames (or user ids) on the eng room's chat
+# app. scripts/bootstrap.py puts them in the fixer's access rule in Switch; no code checks them.
+# A person must have posted once in the eng room, so Switch knows them. Example: ["sam.k"]
+approvers = []
 
 [agents]
 frontdesk = "bugline-frontdesk"

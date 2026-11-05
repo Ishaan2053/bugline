@@ -44,7 +44,7 @@ import importlib.util
 import json
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -475,21 +475,53 @@ def ensure_members(gw: Gateway, room: str, room_id: str, agent_ids: dict[str, st
         say(f"{name} in {room}", gw.done("added") if name in missing else "exists")
 
 
-def expected_policies(eng_id: str) -> dict[str, tuple[dict | None, str]]:
+def expected_policies(
+    eng_id: str, approver_ids: Sequence[str] = ()
+) -> dict[str, tuple[dict | None, str]]:
     """Role -> (the addressing policy the Gateway should hold, a label for it).
 
+    `approver_ids` are Switch's ids for the people in bugline.toml's `approvers`
+    (approver_ids()), who may instruct the fixer as well as the owner, in the eng room only.
     scripts/doctor.py compares the live rules against the same table.
     """
-    fixer_rule = {**OWNER_RULE, "rooms": [eng_id], "owner_agents": False}
+    fixer_rule = {**OWNER_RULE, "rooms": [eng_id], "owner_agents": False, "users": [*approver_ids]}
+    who = "the owner" + (f" and {', '.join(PROJECT.approvers)}" if approver_ids else " only")
     return {
         "frontdesk": (None, "anyone"),
         "reproducer": ({"rules": [OWNER_RULE]}, "the owner and the owner's agents"),
-        "fixer": ({"rules": [fixer_rule]}, f"the owner only, in {PROJECT.rooms['eng']} only"),
+        "fixer": ({"rules": [fixer_rule]}, f"{who}, in {PROJECT.rooms['eng']} only"),
     }
 
 
-def ensure_access_rules(gw: Gateway, layout: Layout, ids: dict[str, str], eng_id: str) -> None:
-    wanted = expected_policies(eng_id)
+def approver_ids(gw: Gateway, bridge: dict) -> list[str]:
+    """Switch's id for each of bugline.toml's approvers: a person on the eng room's chat app
+    (`bridge`), named by username or the app's own user id. Switch lists a person once it has
+    seen them post."""
+    names = PROJECT.approvers
+    if not names:
+        return []
+    users = gw.get(f"/collaborations/{bridge['bridge_id']}/users") or []
+    ids = []
+    for name in names:
+        found = [
+            u["id"]
+            for u in users
+            if name in (u.get("external_username"), u.get("external_user_id"))
+        ]
+        if len(found) != 1:
+            raise Stop(
+                f"approvers in bugline.toml: {len(found)} people called {name!r} on "
+                f"{bridge['display_name']}. Ask them to post once in {PROJECT.rooms['eng']}, "
+                "then run this again."
+            )
+        ids += found
+    return ids
+
+
+def ensure_access_rules(
+    gw: Gateway, layout: Layout, ids: dict[str, str], eng_id: str, approvers: Sequence[str] = ()
+) -> None:
+    wanted = expected_policies(eng_id, approvers)
     current = {agent["id"]: agent.get("addressing_policy") for agent in gw.get("/agents")}
     for spec in layout.agents:
         policy, label = wanted[spec.role]
@@ -668,6 +700,8 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
         bridge = pick_bridge(bridges, kinds[key], opts.connections.get(key), flag)
         roles = {spec.role: spec.name for spec in members[key]}
         room_ids[key] = ensure_room(gw, key, wanted[key], bridge, rooms, roles)
+        if key == "eng":
+            approvers = approver_ids(gw, bridge)
     # One more support room per --add-support app, made like the first from its template. The
     # front desk finds it at start through bugline-eng's link, so no .env changes.
     support_keys = ["support"]
@@ -691,7 +725,7 @@ def run(gw: Gateway, layout: Layout, opts: Options) -> None:
         ensure_members(gw, names[key], room_ids[key], {s.name: agent_ids[s.name] for s in specs})
 
     print("8. Access rules")
-    ensure_access_rules(gw, layout, agent_ids, room_ids["eng"])
+    ensure_access_rules(gw, layout, agent_ids, room_ids["eng"], approvers)
 
     print("9. Room instructions, links and aliases")
     for key, room_id in room_ids.items():

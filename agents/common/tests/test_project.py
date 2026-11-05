@@ -94,6 +94,9 @@ def test_render_refuses_an_unknown_placeholder() -> None:
         load_project().render("$no_such_name")
 
 
+ENG_BRIDGE = 'eng_bridge = "mattermost"'  # the last line of QA_TOML's [rooms]
+
+
 def bad(edit: str, old: str, tmp_path: Path) -> str:
     """parse() of QA_TOML with `old` replaced by `edit`; returns the error message."""
     data = tomllib.loads(QA_TOML.replace(old, edit))
@@ -114,10 +117,17 @@ def bad(edit: str, old: str, tmp_path: Path) -> str:
         ('about = "What you did"', 'about = "x", colour = "red"', "unknown key(s) ['colour']"),
         ('fixer = "qa-fix"', 'fixer = "QA Fix"', "[agents] fixer 'QA Fix'"),
         ("[agents]", "[extras]\nx = 1\n[agents]", "unknown table(s) ['extras']"),
+        (ENG_BRIDGE, ENG_BRIDGE + '\napprovers = [""]', "[rooms] approvers must hold only"),
     ],
 )
 def test_bad_values_name_the_key(tmp_path, old, edit, says) -> None:
     assert says in bad(edit, old, tmp_path)
+
+
+def test_approvers_are_optional(tmp_path) -> None:
+    assert parse(tomllib.loads(QA_TOML), tmp_path / "qa.toml").approvers == ()
+    edited = QA_TOML.replace(ENG_BRIDGE, ENG_BRIDGE + '\napprovers = ["sam.k"]')
+    assert parse(tomllib.loads(edited), tmp_path / "qa.toml").approvers == ("sam.k",)
 
 
 def test_a_missing_file_says_how_to_fix_it(tmp_path, monkeypatch) -> None:

@@ -1,6 +1,7 @@
 """doctor.py against the fake Switch server from test_bootstrap: a running setup passes, a free role
 or stopped agents fail with what to do, and the local checks find a missing clone."""
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -201,3 +202,15 @@ def test_an_added_support_room_needs_the_front_desk_connected(
     assert ok is live
     state = "PASS" if live else "FAIL"
     assert f"{state} bugline-frontdesk connected to bugline-support-mattermost" in out
+
+
+def test_an_approver_switch_cannot_find_fails_the_access_rule_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = bootstrap.PROJECT
+    monkeypatch.setattr(bootstrap, "PROJECT", replace(project, approvers=("nobody",)))
+    ok, out = check(RunningSwitch(), tmp_path, capsys)
+
+    assert not ok
+    assert "FAIL approvers in bugline.toml" in out
+    assert "post once in bugline-eng" in out

@@ -30,6 +30,7 @@ from bootstrap import (
     Gateway,
     Layout,
     Stop,
+    approver_ids,
     expected_policies,
     handoff_env,
     load_agent_configs,
@@ -121,7 +122,15 @@ def switch_checks(gw: Gateway, layout: Layout, email: str, password: str) -> Ite
         yield check
     yield handoff_check(layout, agent_ids)
     yield from role_checks(gw, layout, creds[layout.agents[0].name], ids["eng"])
-    wanted = expected_policies(ids["eng"])
+    eng_bridge = {
+        "bridge_id": (rooms.get(ids["eng"]) or {}).get("bridge_id"),
+        "display_name": layout.room_names["eng"],
+    }
+    try:
+        wanted = expected_policies(ids["eng"], approver_ids(gw, eng_bridge))
+    except Stop as exc:
+        yield Check("approvers in bugline.toml", False, str(exc))
+        return
     for spec in layout.agents:
         policy, label = wanted[spec.role]
         current = (server_agents.get(spec.name) or {}).get("addressing_policy")
