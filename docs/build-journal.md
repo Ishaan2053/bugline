@@ -105,3 +105,32 @@ Built from the plan in `ADDITIONS.md`, one PR each, all squash-merged with CI gr
   config with four fields dry-runs cleanly.
 - Not done live (the session only read): a real bootstrap, `reset_demo.py` for real, the verify
   loop, the two close negatives, and the Mattermost loop.
+
+## 2026-11-05: four front desk features and the first live verify loop
+
+The machine had restarted overnight, so Console, the server and Docker were down; Console would
+not start from the agent's shell and was started by hand. `doctor.py` then showed only the three
+agents missing.
+
+- PR #31: `@frontdesk ask BL-n: <question>` in Slack reaches the reporter's Telegram thread; their
+  next message comes back to the Slack thread. No model call.
+- PR #32: `still broken` from someone waiting on a closed ticket reopens it and hands it back to
+  `@reproducer`. The "fixed" message now says how.
+- PR #33: `@frontdesk requests` lists logged feature requests with names (a column added in place).
+- PR #35: the refusal said "Only @reproducer ...". Switch read that as addressing the role and
+  the reproducer started a Claude Code run on the refusal. It saw nothing was asked and said so,
+  but it cost a run. Replies no longer mention a role; a test checks every fixed text.
+- PR #36: replies in the reporter's language. First live run: the Hinglish replies were right,
+  but Steps/Expected/Actual reached Slack in Hinglish, because "keep quoted text as written" in
+  the prompt beat "write it in English". Split into two rules; the same draft then came back in
+  English.
+- Skipped: the ticket board as a Switch room document. The server source says room documents
+  show in the Switch room UI and to agents, never in Slack, and native Console has no room UI.
+
+Live on Nov 5, as Admin (reporter and PM) and `sam`: `BL-3` (fault 1) → reproduced → `ask`
+round trip → `requests` → `status` → PM approval → fixer PR #34 → reproducer `Verified` →
+closed and "fixed" in the support room, 70 s from approval to close → `still broken` reopened
+it → reproduced again on `main` → `sam`'s `Verified` refused → the owner closed it by hand.
+`BL-4` came in Hinglish. The front desk made 2 Gemini calls for `BL-3`'s whole run; the
+Hinglish report took 2 classify and 2 translate calls. PR #34 was closed unmerged (it removes
+fault 1, like #18).

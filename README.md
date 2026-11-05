@@ -341,21 +341,23 @@ One bug, fault 1 (the share link error), from report to fix, across both apps, a
    This is a second agent-to-agent hand-off over a Switch role with no person in the middle,
    while the PM stays the only one who can start a fix. The front desk accepts the close only
    from the reproducer or the room owner; anyone else who names a ticket is told who may close
-   it. (Not yet run live.)
+   it. Run live on Nov 5 (`BL-3`): fixer PR, reproducer `Verified`, close and the "fixed"
+   message in the support room took 70 s after the PM's approval.
    <!-- author: add screenshot of the Verified line -->
 7. **Close the loop.** The front desk closed `BL-1` and posted in `bugline-support`:
    "Ishaan2053, BL-1 is fixed: https://github.com/Ishaan2053/bugline/pull/18". For `BL-2`, a
    second user's duplicate report was matched to it, and both reporters got the message.
    `@frontdesk status` in `bugline-eng` shows who closed each ticket. If the problem comes back,
    anyone waiting on the ticket replies `still broken`; the front desk reopens it and hands it to
-   `@reproducer` again, with no model call. (Reopen not yet run live.)
+   `@reproducer` again, with no model call. Run live on Nov 5: the reproducer reran its script
+   on `main` and posted `Verdict: reproduced` in the reopened thread.
    <!-- author: add screenshot of the "BL-1 is fixed" message in Telegram -->
 
 **Ask the reporter.** At any point the PM (or anyone in `bugline-eng`) can write
 `@frontdesk ask BL-1: which browser were you on?` in the ticket's thread. The front desk posts the
 question to the reporter in their Telegram thread, and the reporter's next message to it comes
 back into that Slack thread, word for word, with no model call. The PM and the reporter never
-share a chat app. (Not yet run live.)
+share a chat app. Run live on Nov 5 on `BL-3`.
 
 **Any language.** A reporter can write in Hindi, Hinglish or any other language. On Nov 5, `sam`
 wrote "bhai share link kholte hi error aa raha hai"; the front desk asked for the group id in
