@@ -11,7 +11,9 @@ file paths.
 import asyncio
 import json
 import logging
+import time
 import uuid
+from collections import deque
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +29,10 @@ log = logging.getLogger(__name__)
 HTTP_TIMEOUT_S = 30.0
 RECONNECT_START_S = 1.0  # WebSocket reconnect backoff, doubled up to the cap
 RECONNECT_CAP_S = 30.0
+# A message older than this when it arrives is not handed on. A server can deliver history again
+# (on Nov 6 a database restart sent every agent its old messages, approvals included), and an
+# agent must never act on an old instruction as if it were new.
+STALE_AFTER_S = 30 * 60
 # send_targeted_message statuses that mean the target will see the message.
 REACHABLE_STATUSES = frozenset({"live", "awaiting_manual_poll"})
 
@@ -51,6 +57,7 @@ class IncomingMessage:
     # The sending person's role in the workspace ("owner", "admin" or "member"), which Switch
     # reads fresh for each message. None for an agent, or for a chat account no Switch user claimed.
     sender_role: str | None = None
+    timestamp_ms: int | None = None  # when Switch received it, epoch milliseconds
 
     @property
     def thread_root(self) -> str:
@@ -290,6 +297,7 @@ class RoomConnection:
         # Set on every connection_state, so an agent can redo per-connection setup (taking its
         # role) after each reconnect. Whoever waits on it clears it.
         self.connected = asyncio.Event()
+        self._handed_on: deque[str] = deque(maxlen=1000)  # message ids already queued
 
     def url(self) -> str:
         """Connection id and room go in the query; a reconnect resumes from the cursor."""
@@ -358,8 +366,28 @@ class RoomConnection:
             elif "id" in frame:  # a domain event: message, command, room_join
                 self.cursor = frame["id"]
                 message = self._parse(data) if event == "message" else None
-                if message:
+                if message and self._is_new(message):
                     await queue.put(message)
+
+    def _is_new(self, message: IncomingMessage) -> bool:
+        """False for a message already handed on, or one older than STALE_AFTER_S."""
+        if message.message_id in self._handed_on:
+            log.warning("%s: %s was delivered again; ignored", self.room, message.message_id)
+            return False
+        self._handed_on.append(message.message_id)
+        if message.timestamp_ms is not None:
+            age_s = time.time() - message.timestamp_ms / 1000
+            if age_s > STALE_AFTER_S:
+                log.warning(
+                    "%s: ignored %s from %s, sent %d min ago: %.60r",
+                    self.room,
+                    message.message_id,
+                    message.sender_name,
+                    age_s // 60,
+                    message.body,
+                )
+                return False
+        return True
 
     def _parse(self, data: dict[str, Any]) -> IncomingMessage | None:
         """Only messages addressed to this agent are handed on; the rest is room chatter."""
@@ -375,4 +403,5 @@ class RoomConnection:
             message_id=payload.get("message_id", ""),
             thread_id=payload.get("thread_id"),
             sender_role=payload.get("sender_role"),
+            timestamp_ms=payload.get("timestamp"),
         )
