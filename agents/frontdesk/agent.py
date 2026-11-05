@@ -49,6 +49,15 @@ class Poster:
         self.connections = connections
         self.sent: deque[str] = deque(maxlen=500)  # our own event ids, so we never answer ourselves
 
+    async def run_each(self, posts: list[Post]) -> None:
+        """Carry out `posts` in order. One that fails is logged, and the rest still go out: a
+        close's `Closed BL-n` reply must not take the reporters' "fixed" messages down with it."""
+        for post in posts:
+            try:
+                await self.run(post)
+            except Exception:
+                log.exception("could not post to %s: %r", post.room, post.body[:80])
+
     async def run(self, post: Post) -> None:
         if not (post.target_roles or post.target_names):
             await self._post(post.room, post.body, post.thread_id)
@@ -121,10 +130,10 @@ async def dispatch(
         log.info("%s: %s says %r", msg.room, msg.sender_name, msg.body[:80])
         try:
             posts = await loop.run_in_executor(worker, handle, msg, store)
-            for post in posts:
-                await poster.run(post)
         except Exception:
             log.exception("could not handle message %s", msg.message_id)
+            continue
+        await poster.run_each(posts)
 
 
 async def serve() -> None:
