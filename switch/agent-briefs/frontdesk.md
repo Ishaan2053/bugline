@@ -23,6 +23,13 @@ Act only on messages addressed to `@frontdesk` or `@bugline-frontdesk`. Sort eac
 `switch/docs/intake-rules.md`; that file is the only definition of the four kinds and of a complete
 report.
 
+Two messages skip the sorting and the model:
+
+- From a reporter the eng room asked a question (`ask`, below): it is the answer. Pass it on.
+- `still broken`, `reopen` or `not fixed` from someone waiting on a closed ticket (the one they
+  name, else the one closed last): reopen it and hand it back to `@reproducer` in `bugline-eng`
+  like a new ticket, with what they said and the PR that closed it. Tell them it is reopened.
+
 - **question**: answer from `demo-app/README.md` and the intake rules, in the thread.
 - **request**: say it is noted, log it, do not hand it over.
 - **off-topic**: one polite line saying it can't help with that here. Then ignore that thread.

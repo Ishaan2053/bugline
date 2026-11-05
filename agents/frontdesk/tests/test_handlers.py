@@ -184,6 +184,10 @@ def verified(ticket: int = 1, by: str = REPRO, **kwargs) -> IncomingMessage:
     return eng(f"@bugline-frontdesk Verified BL-{ticket}: {PR}", user=by, **kwargs)
 
 
+def fixed(name: str, ticket_id: str = "BL-1") -> str:
+    return messages.FIXED.format(name=name, ticket_id=ticket_id, pr_url=PR)
+
+
 def close(message: IncomingMessage, store: Store) -> list[Post]:
     return handle(message, store, FakeModels(), verifiers=VERIFIERS)
 
@@ -196,8 +200,8 @@ def test_verified_by_the_reproducer_closes_and_notifies_every_subscriber(store: 
 
     assert posts == [
         Post(config.ROOM_ENG, "Closed BL-1, telling the reporter.", thread_id="m9"),
-        Post(config.ROOM_SUPPORT, f"Asha, BL-1 is fixed: {PR}", thread_id="m1"),
-        Post(config.ROOM_SUPPORT, f"Ravi, BL-1 is fixed: {PR}", thread_id="m2"),
+        Post(config.ROOM_SUPPORT, fixed("Asha"), thread_id="m1"),
+        Post(config.ROOM_SUPPORT, fixed("Ravi"), thread_id="m2"),
     ]
     assert store.get_ticket("BL-1").closed_by == REPRO  # type: ignore[union-attr]
     (board,) = handle(eng("@frontdesk status"), store, FakeModels())
@@ -400,3 +404,38 @@ def test_ask_needs_an_open_ticket(store: Store, setup: bool, expected: str) -> N
         close(verified(), store)
     posts = handle(eng("@frontdesk ask BL-1: which browser?"), store, FakeModels())
     assert posts == [Post(config.ROOM_ENG, expected, thread_id="m9")]
+
+
+def test_still_broken_reopens_the_ticket_and_hands_it_back(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    handle(msg("@frontdesk me too", user="u2", n=2), store, FakeModels(bug(), duplicate="BL-1"))
+    close(verified(), store)
+
+    posts = handle(msg("@frontdesk Still broken on group 1", user="u2", n=3), store, FakeModels())
+
+    escalate, confirm = posts  # no model call: FakeModels has nothing queued
+    assert escalate.room == config.ROOM_ENG
+    assert escalate.target_roles == (config.REPRODUCER_ROLE,)
+    assert escalate.body.splitlines()[:3] == [
+        "BL-1 (reopened): Share link returns an error",
+        "Reopened by: Ravi (bugline-support): Still broken on group 1",
+        f"Closed before with: {PR}",
+    ]
+    assert confirm == reply(messages.REOPENED.format(ticket_id="BL-1"), n=3)
+    ticket = store.get_ticket("BL-1")
+    assert ticket is not None and (ticket.status, ticket.closed_by) == ("open", None)
+    assert len(close(verified(), store)) == 3  # the next close tells both again
+
+
+def test_reopen_needs_a_closed_ticket_the_sender_waits_on(store: Store) -> None:
+    handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
+    close(verified(), store)
+    # Someone who never reported BL-1, and the reporter of an open ticket, go to the model.
+    stranger = FakeModels(kind("question"))
+    handle(msg("@frontdesk BL-1 is still broken", user="u2", n=2), store, stranger)
+    assert stranger.calls[0][0] == "classify"
+    assert store.get_ticket("BL-1").status == "closed"  # type: ignore[union-attr]
+    handle(msg("@frontdesk reopen BL-1", n=3), store, FakeModels())
+    again = FakeModels(kind("question"))
+    handle(msg("@frontdesk reopen BL-1", n=4), store, again)  # already open
+    assert again.calls[0][0] == "classify"

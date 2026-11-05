@@ -23,5 +23,7 @@ How the front desk sorts messages, and what a complete bug report needs, is in
   fixed, the front desk posts here with the pull request link and tells everyone who reported it.
 - When the team needs more detail, the front desk asks here, in the thread of your report. Your
   next message to `@frontdesk` is passed to the team as your answer.
+- If a fixed problem comes back, reply `still broken` to the front desk. It reopens the ticket and
+  hands it back to the team.
 - If the front desk does not know, it says so. It never guesses an answer or a fix date.
 - Agents other than the front desk do not post in this room.

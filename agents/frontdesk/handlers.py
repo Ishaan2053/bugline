@@ -90,6 +90,11 @@ def _handle_support(msg: IncomingMessage, store: Store, models: Models) -> list[
     )
     if question:
         return _pass_answer(msg, text, question, store)
+    # "still broken" from someone waiting on a closed ticket: reopen it, again with no model call.
+    if config.REOPEN_RE.search(text):
+        closed = store.closed_ticket_of(msg.sender_id, ticket_id)
+        if closed and store.reopen_ticket(closed.ticket_id):
+            return _reopen(msg, text, closed)
     if store.too_many_open_tickets(msg.sender_id):
         return [_reply(msg, messages.TOO_MANY_OPEN)]
     if not store.allow_model_reply(msg.sender_id):
@@ -134,16 +139,7 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
         asdict(report),
         thread_id=msg.thread_root,
     )
-    names = (config.REPRODUCER_NAME,) if config.REPRODUCER_NAME else ()
-    escalate = Post(
-        config.ROOM_ENG,
-        messages.escalation(ticket_id, report, msg.sender_name),
-        target_roles=(config.REPRODUCER_ROLE,),
-        target_names=names,
-        if_unreachable=messages.NO_REPRODUCER.format(
-            role=config.REPRODUCER_ROLE, ticket_id=ticket_id
-        ),
-    )
+    escalate = _to_reproducer(messages.escalation(ticket_id, report, msg.sender_name), ticket_id)
     return [escalate, _reply(msg, messages.ESCALATED.format(ticket_id=ticket_id))]
 
 
@@ -155,6 +151,26 @@ def _pass_answer(msg: IncomingMessage, text: str, question: Question, store: Sto
         Post(config.ROOM_ENG, body, thread_id=question.eng_thread_id),
         _reply(msg, messages.ANSWER_PASSED),
     ]
+
+
+def _reopen(msg: IncomingMessage, text: str, ticket: Ticket) -> list[Post]:
+    """Hand a reopened ticket back to the reproducer, the same way as a new one."""
+    escalate = _to_reproducer(messages.reopened(ticket, msg.sender_name, text), ticket.ticket_id)
+    return [escalate, _reply(msg, messages.REOPENED.format(ticket_id=ticket.ticket_id))]
+
+
+def _to_reproducer(body: str, ticket_id: str) -> Post:
+    """A post in the eng room addressed to the reproducer role (and its name, when set)."""
+    names = (config.REPRODUCER_NAME,) if config.REPRODUCER_NAME else ()
+    return Post(
+        config.ROOM_ENG,
+        body,
+        target_roles=(config.REPRODUCER_ROLE,),
+        target_names=names,
+        if_unreachable=messages.NO_REPRODUCER.format(
+            role=config.REPRODUCER_ROLE, ticket_id=ticket_id
+        ),
+    )
 
 
 def _handle_eng(msg: IncomingMessage, store: Store, verifiers: Collection[str]) -> list[Post]:
