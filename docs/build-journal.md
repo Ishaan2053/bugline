@@ -217,3 +217,25 @@ the front desk took the eng room from `.env` and the rules from the repo.
   vague report asked for four fields, off-topic declined, duplicate matched to `BL-1`, fault 1
   reproduced in 37 s, sam refused by Switch, and 95 s from the PM's approval to "BL-1 is fixed"
   for both reporters. Every brief came from Switch, and no tool call was refused.
+
+## 2026-11-06 (later)
+
+- 00:39: Switch's own Postgres crashed (`PANIC: could not write to log file`, Windows error 1450)
+  and restarted. The agents had just been started after `reset_demo.py`, with cursor 0, and
+  reconnected with `start_from=0`, which the server reads as "every event from the first". All
+  three got their whole history. The front desk answered two old Telegram messages and escalated
+  an old report; the fixer was handed three old approvals and ran none, only because it crashed
+  on the server's 500s first. Stopped by hand.
+- PR #52: no `start_from` while the cursor is 0; the coder survives a dropped post.
+- PR #53: a connection hands on no message older than 30 minutes and none it already handed on.
+- PRs #54 to #56, the rest of the Nov 5 review: a reopen phrase counts only in a message's first
+  four words; a muted thread still takes an `ask` answer and a reopen; `doctor.py` checks that
+  Claude Code is signed in; after an unfinished run the coder's clone goes back to `main`.
+- PRs #57 and #58: one eng room, many support rooms. The front desk serves every room
+  `bugline-eng` links to with "supports", on any chat app; `bootstrap.py --add-support mattermost`
+  makes one. One ticket can collect reporters from Telegram and Mattermost, each told in their own
+  app.
+- PR #59: `approvers` in `bugline.toml` go into the fixer's access rule. A rule's `users` hold
+  Switch's ids for chat-app people (`ExternalUser`), not Slack member ids, so bootstrap looks them
+  up through the connection's users list.
+- Not yet run live: the server was stopped after the crash.

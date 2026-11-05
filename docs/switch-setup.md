@@ -221,6 +221,47 @@ rewrites the room ids in both `.env` files and the fixer's access rule. To keep 
 `agents/frontdesk/.env`. Other chat apps where Switch can create channels (Discord, Teams) take
 the same flags; see [Other chat apps](#other-chat-apps).
 
+### More support rooms and approvers
+
+**A second support room on another app.** Users on two chat apps can report into one engineering
+room. Add one room per app with `--add-support`, on any app where Switch can create channels:
+
+```powershell
+agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --dry-run --add-support mattermost
+agents\frontdesk\.venv\Scripts\python scripts\bootstrap.py --add-support mattermost
+```
+
+```bash
+agents/frontdesk/.venv/bin/python scripts/bootstrap.py --dry-run --add-support mattermost
+agents/frontdesk/.venv/bin/python scripts/bootstrap.py --add-support mattermost
+```
+
+Bootstrap makes `bugline-support-mattermost` from the support template and treats it like
+`bugline-support`: the front desk joins with its `@frontdesk` alias, the room gets the support
+instructions (naming its own app) and `bugline-kit`, and it is linked both ways ("escalates to"
+`bugline-eng`; `bugline-eng` "supports" it). The `.env` files do not change. Restart the front
+desk: it logs `support rooms: ...` with every room `bugline-eng` supports and connects to each.
+`doctor.py` checks the front desk is connected there. Type `!follow-ups off` in the new room. A
+later bootstrap run without the flag leaves the room as it is.
+
+A report from the new room gets its own ticket, or joins an open one through the duplicate
+check, whichever room that ticket came from. The eng room's ticket names the reporter's room,
+and on the close each subscriber hears in their own room.
+
+**More approvers.** By default only the owner of `bugline-fixer` can tell it to go. To let others,
+name them in `bugline.toml`, by username (or the app's own user id) on the eng room's chat app:
+
+```toml
+[rooms]
+approvers = ["sam.k"]
+```
+
+Each person must have posted once in `bugline-eng`, so Switch knows them. Then run bootstrap. It
+looks each one up (`GET /gateway/collaborations/<connection>/users`), puts their Switch ids in the
+`users` of the fixer's access rule (still `bugline-eng` only), and stops with what to do if
+someone is not found. `doctor.py` checks the rule with the same list. No agent code reads it:
+Switch refuses everyone else, as before.
+
 ## Part C: start the agents
 
 ### 6. Start the three agents
