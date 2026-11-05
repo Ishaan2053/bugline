@@ -11,6 +11,7 @@ import pytest
 import bootstrap
 
 SUPPORT, ENG, REF, PKG = "room-support", "room-eng", "ref-1", "pkg-1"
+KIT = bootstrap.KIT_NAME  # the kit of the setup the fake server holds
 AGENT_IDS = {"bugline-frontdesk": "a-fd", "bugline-repro": "a-repro", "bugline-fixer": "a-fixer"}
 ROLES = {"bugline-frontdesk": "frontdesk", "bugline-repro": "reproducer", "bugline-fixer": "fixer"}
 ROLES_BY_NAME = {role: name for name, role in ROLES.items()}  # the eng template's agent inputs
@@ -136,7 +137,7 @@ class FakeSwitch:
                 "content": doc_text(name),
             }
         if path == "/gateway/packages":
-            return [{"id": PKG, "name": bootstrap.KIT_NAME}] if done else []
+            return [{"id": PKG, "name": KIT}] if done else []
         if path == f"/gateway/packages/{PKG}/references":
             return [{"id": REF}]
         if path == f"/gateway/rooms/{ENG}/references":
@@ -326,6 +327,21 @@ def test_a_setup_from_before_the_verify_handoff_gets_its_two_settings(
     out = capsys.readouterr().out
     assert "agents/frontdesk/.env: updated (SWITCH_REPRODUCER_AGENT_ID)" in out
     assert "agents/coder/.env: updated (FRONTDESK_AGENT_NAME)" in out
+
+
+def test_a_second_project_gets_its_own_kit_and_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server already holds bugline-kit; another bugline.toml must not rewrite its documents."""
+    assert KIT == "bugline-kit"  # the shipped bugline.toml keeps the kit's old name
+    monkeypatch.setattr(bootstrap, "KIT_NAME", "other-kit")
+    fake = FakeSwitch(finished=True)
+    run(fake, make_layout(tmp_path, registered=True), False)
+
+    writes = fake.writes()
+    assert writes.count(("POST", "/gateway/documents")) == len(bootstrap.KIT_DOCS)
+    assert ("POST", "/gateway/packages") in writes
+    assert not [path for _, path in writes if path.startswith("/gateway/documents/")]
 
 
 def test_set_env_values_changes_only_what_differs(tmp_path: Path) -> None:

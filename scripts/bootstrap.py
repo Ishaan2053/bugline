@@ -21,8 +21,9 @@ Console bundles. It does everything else, in order, and prints "created", "updat
    fixer the owner only and only in bugline-eng.
 9. Sets each room's instructions from switch/, links the rooms, and gives the front desk the
    alias `frontdesk` in both.
-10. Creates the bugline-kit package (the three files in switch/docs/ as library documents, plus
-    the bugline-repo reference) and attaches it to both rooms.
+10. Creates the project's kit package, bugline-kit for the shipped bugline.toml (the three files
+    in switch/docs/ as library documents, plus the bugline-repo reference), and attaches it to
+    both rooms.
 11. Prints what is left by hand.
 
 Why it reads Switch Console's env file: Console on Windows runs the server natively, and a native
@@ -75,7 +76,8 @@ INSTRUCTIONS = {key: REPO_ROOT / "switch" / f"room-instructions-{key}.md" for ke
 LINKS = [("support", "eng", "escalates to"), ("eng", "support", "supports")]
 FRONTDESK_ALIAS = "frontdesk"  # both templates give this alias
 REFERENCE_NAME = "bugline-repo"  # made by the template's `references:`
-KIT_NAME = "bugline-kit"
+# Named after the project, so a second project on the same server gets its own kit and documents.
+KIT_NAME = f"{PROJECT.name}-kit"
 KIT_DESCRIPTION = "The rules Bugline's agents work by, and the repo they work on"
 KIT_INSTRUCTIONS = "The same files are in switch/docs/ in the repo; the repo copy is the source."
 # The library documents: file in switch/docs/ -> when to read it. The text is read at run time.
@@ -567,10 +569,14 @@ def ensure_member(gw: Gateway, package_id: str, kind: str, member_id: str, label
 
 
 def ensure_kit(gw: Gateway, names: dict[str, str], room_ids: dict[str, str]) -> None:
-    documents = {d["name"]: d for d in gw.get("/documents") if d.get("scope") == "global"}
+    """The kit and its documents. Documents are looked up inside this project's kit only: the
+    server lets global documents share a name, and another project's `intake-rules.md` must
+    keep its own text."""
+    package = next((p for p in gw.get("/packages") if p["name"] == KIT_NAME), None)
+    in_kit = (gw.get(f"/packages/{package['id']}/documents") or []) if package else []
+    documents = {d["name"]: d for d in in_kit}
     doc_ids = {name: ensure_document(gw, documents, name, when) for name, when in KIT_DOCS.items()}
 
-    package = next((p for p in gw.get("/packages") if p["name"] == KIT_NAME), None)
     if package:
         package_id = package["id"]
         say(f"package {KIT_NAME}", "exists")
