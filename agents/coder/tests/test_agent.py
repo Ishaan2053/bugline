@@ -242,3 +242,21 @@ def test_failed_run_and_crashing_runner_post_one_line_and_the_loop_goes_on(setti
         "Something went wrong on my side; it is in the agent's log.",
         "fine",
     ]
+
+
+def test_a_dropped_connection_while_posting_is_logged_not_raised(settings, caplog) -> None:
+    """On Nov 6 the server's database restarted mid-post; the error ended the whole coder."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("connection dropped", request=request)
+
+    api = SwitchApi("http://switch.test", CREDS, transport=httpx.MockTransport(handler))
+    connection = RoomConnection("eng", "room-e", CREDS, "http://switch.test", "c-eng")
+    coder = Coder(settings, api, connection, None)
+
+    async def main() -> None:
+        await coder._post("Busy with BL-1, queued.", message(1, "@fixer go on BL-2"))
+        await api.aclose()
+
+    asyncio.run(main())
+    assert "could not post 'Busy with BL-1, queued.'" in caplog.text

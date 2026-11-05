@@ -294,7 +294,10 @@ class RoomConnection:
     def url(self) -> str:
         """Connection id and room go in the query; a reconnect resumes from the cursor."""
         query: dict[str, Any] = {"connection_id": self.connection_id, "rooms": self.room_id}
-        if self.cursor is not None:
+        # The server's cursor is 0 until it has delivered something, and `start_from=0` asks for
+        # the agent's events from the very first: every old message again. With nothing
+        # delivered yet, leave it out and start at the head.
+        if self.cursor:
             query["start_from"] = self.cursor
         if self.generation is not None:
             query["expected_generation"] = self.generation
