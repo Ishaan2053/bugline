@@ -134,3 +134,31 @@ it → reproduced again on `main` → `sam`'s `Verified` refused → the owner c
 `BL-4` came in Hinglish. The front desk made 2 Gemini calls for `BL-3`'s whole run; the
 Hinglish report took 2 classify and 2 translate calls. PR #34 was closed unmerged (it removes
 fault 1, like #18).
+
+## 2026-11-05 (evening): a second copy on Mattermost, from a fresh clone
+
+To prove part B and the Mattermost variant, a second copy of Bugline was set up from a fresh
+clone with its own `bugline.toml` (`bltest-support` / `bltest-eng`, agents `bltest-*`, tickets
+`BT-n`, both rooms on Console's bundled Mattermost), next to the demo on the same server.
+
+- The dry run caught a real bug first: bootstrap found the kit's library documents by file name
+  across the whole server, so the second copy would have rewritten the demo's `intake-rules.md`,
+  `repro-checklist.md` and `fix-policy.md` with its own names. PR #38: the kit is now
+  `<project>-kit`, and its documents are looked up inside it (Switch lets global documents share
+  a name). The demo's own dry run still says `exists` for all of it.
+- Bootstrap then made everything from nothing in one run; a second run changed nothing; `doctor.py`
+  passed every line.
+- The complete report got no reply: Gemini answered 503 "high demand", and only 429 was retried.
+  PR #39 waits out 503 the same way and, if that fails, sends the rate-limited reply.
+- The reproducer said it "wasn't allowed to write `scratch/bt_1.py`", as it did once on `BL-4`.
+  A probe with its exact command line wrote there fine; it also showed that `Write(...)` path
+  rules are ignored and `Edit(...)` rules are what allow the Write tool. PR #40 logs each refused
+  tool call, so the next refusal names its path. The second run wrote its script with no refusal.
+- Full loop on Mattermost: vague report → asked for the group id → `BT-1` reproduced → `sam`'s
+  `@fixer` refused by Switch → owner's approval → fixer PR #41 → reproducer `Verified` (on `main`,
+  then on the PR) → closed and "fixed" in `bltest-support`, under 2 minutes after approval. Two
+  Gemini calls for the loop. PR #41 was closed unmerged.
+- The lite model copied the share token as `goa-rip-share` into the ticket. The reproducer
+  noticed, tried both tokens, and reproduced on the real one.
+- On this machine `py -3.14` finds nothing, because Python 3.14 came from uv; the venvs were made
+  with that interpreter's full path.

@@ -174,8 +174,8 @@ so it follows too.
   connects it as `Mattermost`; on the author's server it was `active`, with channel creation on.
   It is at `http://localhost:<port>`, the port being `mattermost` in Console's `ports.json`.
   `--support-bridge mattermost --eng-bridge mattermost` makes both rooms there and needs no
-  Telegram or Slack account; see the README's Mattermost variant. Checked with unit tests and a
-  dry run only; no real run.
+  Telegram or Slack account; see the README's Mattermost variant. One full loop ran there on
+  Nov 5, from a fresh clone with its own `bugline.toml`.
 - **Discord, Microsoft Teams.** Switch can create channels on both, so the same flags should work
   (`--support-bridge <type>`, with the type as `GET /gateway/collaborations` shows it). Untested.
 

@@ -83,7 +83,7 @@ here". Questions, requests, off-topic messages, incomplete reports and duplicate
 Part A runs from a fresh clone with Docker and Python. Part B needs a Switch server, a Telegram bot
 and a Slack app of your own; the chat-app steps are manual, and one script does the rest. Without
 Telegram or Slack, the [Mattermost variant](#variant-mattermost-only-no-telegram-or-slack) uses
-the Mattermost that Switch Console bundles (untested by the author).
+the Mattermost that Switch Console bundles (one full loop run on Nov 5).
 [docs/switch-setup.md](docs/switch-setup.md) walks through part B in full.
 
 ### Prerequisites
@@ -266,11 +266,14 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
 
 #### Variant: Mattermost only, no Telegram or Slack
 
-> **Untested by the author.** The author's demo runs on Telegram and Slack. For this variant, the
-> bootstrap flags are covered by unit tests against a fake server, and
-> `bootstrap.py --dry-run --support-bridge mattermost --eng-bridge mattermost` was run against the
-> author's server: bundled Mattermost was connected and `active`, and the dry run planned both
-> rooms from the templates. No real run was made on Mattermost.
+> **Run once, on Nov 5.** The author's demo runs on Telegram and Slack. This variant was run from a
+> fresh clone, on the same server as the demo, with a second `bugline.toml` (`bltest-*` rooms and
+> agents, tickets `BT-n`, both bridges `mattermost`). Bootstrap made everything in one run, a
+> second run changed nothing, and `doctor.py` passed every check. Then: a vague report, the
+> question for the group id, `BT-1` in the eng room, reproduced; a second Switch user's `@fixer`
+> refused; the owner's approval, fixer PR, reproducer `Verified`, and "fixed" back in the support
+> room, under 2 minutes after approval. The users' messages went in through the Gateway chat API,
+> as Admin and a second Switch user, not typed in Mattermost's web app.
 >
 > Switch Console starts a Mattermost server along with its local server (in Docker, so Docker
 > must be running) and connects it as the messaging app `Mattermost`. Switch can create channels
@@ -294,8 +297,8 @@ calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--re
 >   `!follow-ups off` in each.
 > - The end user is a second Mattermost account (Console's Mattermost allows sign-up from its
 >   sign-in page). The same account tests the gate: `@fixer` from it should be refused, because
->   the fixer's access rule admits only its owner. Neither the front desk's "anyone" rule nor the
->   refusal was tried with a Mattermost account, and the refusal wording may differ from Slack's.
+>   the fixer's access rule admits only its owner. For a second Switch user the refusal read as it
+>   does on Slack; a Mattermost account that is not linked to a Switch user was not tried.
 >
 > The flags are not saved. Bootstrap run again without them goes back to Telegram and Slack and
 > rewrites the room ids in both `.env` files and the fixer's access rule. To keep Mattermost, set
@@ -526,8 +529,9 @@ faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
 ## Limits and next steps
 
 - The limit of 5 open tickets per user is unit-tested but was not hit in the live run.
-- `scripts/bootstrap.py` was run against the live setup (it found everything and created
-  `bugline-kit`), not against a fresh server; its create paths are unit-tested against a fake one.
+- `scripts/bootstrap.py` set up a second copy from nothing on Nov 5 (new agents, rooms, rules,
+  links and kit, on Mattermost; see the variant above), but on a server that already had the demo,
+  not on a newly installed Switch.
 - The second user in the live run (`sam`) posted through the Gateway chat API, not from a second
   Telegram or Slack account. The refusal wording for an unlinked chat account may differ
   ([switch-setup.md](docs/switch-setup.md#troubleshooting)).
