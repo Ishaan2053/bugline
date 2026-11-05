@@ -25,7 +25,9 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Post:
-    """A message to post in a room (by key), optionally in a thread and addressed to targets.
+    """A message to post in a room, optionally in a thread and addressed to targets.
+
+    `room` is config.ROOM_ENG for the eng room, or a support room's Switch id.
 
     With targets, agent.py uses send_targeted_message; if none of them is reachable it posts
     `if_unreachable` in the same thread so a person sees that nobody picked the work up.
@@ -172,7 +174,8 @@ def _bug(msg: IncomingMessage, result: Classification, store: Store, models: Mod
         asdict(report),
         thread_id=msg.thread_root,
     )
-    body = messages.escalation(ticket_id, report, msg.sender_name, result.language)
+    room = config.room_name(msg.room_id)
+    body = messages.escalation(ticket_id, report, msg.sender_name, result.language, room)
     escalate = _to_reproducer(body, ticket_id)
     return [escalate, _say(msg, messages.ESCALATED.format(ticket_id=ticket_id), store, models)]
 
@@ -198,7 +201,8 @@ def _reopen(
     msg: IncomingMessage, text: str, ticket: Ticket, store: Store, models: Models
 ) -> list[Post]:
     """Hand a reopened ticket back to the reproducer, the same way as a new one."""
-    escalate = _to_reproducer(messages.reopened(ticket, msg.sender_name, text), ticket.ticket_id)
+    body = messages.reopened(ticket, msg.sender_name, text, config.room_name(msg.room_id))
+    escalate = _to_reproducer(body, ticket.ticket_id)
     confirm = _say(msg, messages.REOPENED.format(ticket_id=ticket.ticket_id), store, models)
     return [escalate, confirm]
 
@@ -257,7 +261,7 @@ def _handle_eng(
         return [_reply(msg, messages.NOT_OPEN.format(ticket_id=ticket_id))]
     notices = [
         Post(
-            config.ROOM_SUPPORT,
+            s.room_id,  # each subscriber hears in their own support room, on their own chat app
             _in_language(
                 messages.FIXED.format(
                     name=s.name or "Hello", ticket_id=ticket_id, pr_url=pr.group(0)
@@ -291,7 +295,7 @@ def _ask_reporter(
     name = reporter.name or "Hello"
     return [
         Post(
-            config.ROOM_SUPPORT,
+            reporter.room_id,
             _in_language(
                 messages.QUESTION.format(name=name, ticket_id=ticket_id, question=question.strip()),
                 reporter.user_id,
@@ -300,7 +304,7 @@ def _ask_reporter(
             ),
             thread_id=reporter.thread_id,
         ),
-        _reply(msg, messages.ASKED.format(name=name, room=config.ROOM_NAMES[config.ROOM_SUPPORT])),
+        _reply(msg, messages.ASKED.format(name=name, room=config.room_name(reporter.room_id))),
     ]
 
 

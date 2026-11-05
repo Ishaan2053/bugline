@@ -10,7 +10,13 @@ from common.switch_client import Credentials, RoomConnection, SwitchApi
 
 import classify
 import config
-from agent import Poster, escalation_room, refresh_intake_rules, verifier_names
+from agent import (
+    Poster,
+    escalation_room,
+    refresh_intake_rules,
+    support_rooms,
+    verifier_names,
+)
 from handlers import Post
 
 CREDS = Credentials("agent-1", "key-1")
@@ -237,3 +243,36 @@ def test_the_intake_rules_come_from_the_kit_in_switch(monkeypatch) -> None:
 def test_without_switch_the_intake_rules_are_the_repo_copy(monkeypatch) -> None:
     rules = refresh(monkeypatch, lambda op: httpx.Response(500, json={"detail": "down"}))
     assert rules == "TEST INTAKE RULES"  # conftest points the repo copy at this text
+
+
+def test_support_rooms_are_the_rooms_eng_links_back_to() -> None:
+    supports = config.SUPPORT_LINK
+    links = [
+        link(supports, "r-tg") | {"target_room_name": "Telegram room"},
+        link(supports, "r-mm") | {"target_room_name": "Mattermost room"},
+        link(supports, "r-x", access="not_member") | {"target_room_name": "Not mine"},
+        link("related", "r-y") | {"target_room_name": "Related"},
+    ]
+    eng = RoomConnection(config.ROOM_ENG, "room-eng", CREDS, "http://s.test", "c-eng")
+    transport = httpx.MockTransport(lambda request: ok(links))
+
+    async def main() -> dict[str, str]:
+        eng.connected.set()
+        api = SwitchApi("http://switch.test", CREDS, transport=transport)
+        try:
+            return await support_rooms(api, eng)
+        finally:
+            await api.aclose()
+
+    assert asyncio.run(main()) == {"r-tg": "Telegram room", "r-mm": "Mattermost room"}
+
+
+def test_a_post_to_a_room_without_a_connection_uses_the_plain_route() -> None:
+    """A subscriber of an old ticket whose support room is no longer linked still hears."""
+    seen, _ = run_posts(
+        [Post("room-gone", "Asha, BL-1 is fixed", thread_id="m1")],
+        lambda path, body: httpx.Response(200, json={"ok": True, "event_id": "e9"}),
+    )
+    assert seen == [
+        ("/agents/agent-1/message", "", {"room_id": "room-gone", "content": "Asha, BL-1 is fixed"})
+    ]

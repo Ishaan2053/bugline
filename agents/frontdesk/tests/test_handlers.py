@@ -64,10 +64,14 @@ def kind(name: str) -> Classification:
     return Classification(name, [], Report())  # type: ignore[arg-type]
 
 
-def msg(body: str, *, room: str = config.ROOM_SUPPORT, user: str = "u1", n: int = 1, thread=None):
+# A support room as the front desk knows it: by its Switch room id (the eng room is ROOM_ENG).
+SUPPORT = "room-support"
+
+
+def msg(body: str, *, room: str = SUPPORT, user: str = "u1", n: int = 1, thread=None):
     return IncomingMessage(
         room=room,
-        room_id=f"room-{room}",
+        room_id="room-eng" if room == config.ROOM_ENG else room,
         sender_id=user,
         sender_name={"u1": "Asha", "u2": "Ravi"}.get(user, user),
         body=body,
@@ -85,7 +89,7 @@ def store() -> Store:
 
 
 def reply(body: str, n: int = 1) -> Post:
-    return Post(config.ROOM_SUPPORT, body, thread_id=f"m{n}")
+    return Post(SUPPORT, body, thread_id=f"m{n}")
 
 
 def test_question_is_answered_in_thread(store: Store) -> None:
@@ -202,6 +206,30 @@ def close(message: IncomingMessage, store: Store) -> list[Post]:
     return handle(message, store, FakeModels(), verifiers=VERIFIERS)
 
 
+def test_one_ticket_across_two_chat_apps(store: Store, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asha reports on Telegram, Ravi reports the same bug on Mattermost: one ticket, and each
+    hears about it in their own room, on their own app."""
+    telegram, mattermost = "room-tg", "room-mm"
+    names = {telegram: "Bugline Telegram: bugline-support", mattermost: "bugline-support-mm"}
+    monkeypatch.setattr(config, "support_rooms", names)
+
+    escalate, _ = handle(msg("@frontdesk full report", room=telegram), store, FakeModels(bug()))
+    assert "Reporter: Asha (Bugline Telegram: bugline-support)" in escalate.body
+    duplicate = FakeModels(bug(), duplicate="BL-1")
+    tracked = handle(msg("@frontdesk me too", room=mattermost, user="u2", n=2), store, duplicate)
+    assert tracked == [Post(mattermost, messages.TRACKED.format(ticket_id="BL-1"), "m2")]
+
+    asked = handle(eng("@frontdesk ask BL-1: which browser?"), store, FakeModels())
+    assert asked[0].room == telegram
+    assert asked[1].body == messages.ASKED.format(name="Asha", room=names[telegram])
+
+    closed = close(verified(), store)
+    assert closed[1:] == [
+        Post(telegram, fixed("Asha"), thread_id="m1"),
+        Post(mattermost, fixed("Ravi"), thread_id="m2"),
+    ]
+
+
 def test_verified_by_the_reproducer_closes_and_notifies_every_subscriber(store: Store) -> None:
     handle(msg("@frontdesk full report", n=1), store, FakeModels(bug()))
     handle(msg("@frontdesk me too", user="u2", n=2), store, FakeModels(bug(), duplicate="BL-1"))
@@ -210,8 +238,8 @@ def test_verified_by_the_reproducer_closes_and_notifies_every_subscriber(store: 
 
     assert posts == [
         Post(config.ROOM_ENG, "Closed BL-1, telling the reporter.", thread_id="m9"),
-        Post(config.ROOM_SUPPORT, fixed("Asha"), thread_id="m1"),
-        Post(config.ROOM_SUPPORT, fixed("Ravi"), thread_id="m2"),
+        Post(SUPPORT, fixed("Asha"), thread_id="m1"),
+        Post(SUPPORT, fixed("Ravi"), thread_id="m2"),
     ]
     assert store.get_ticket("BL-1").closed_by == REPRO  # type: ignore[union-attr]
     (board,) = handle(eng("@frontdesk status"), store, FakeModels())
@@ -368,7 +396,7 @@ def test_ask_reaches_the_reporter_and_the_answer_comes_back(store: Store) -> Non
     question = messages.QUESTION.format(name="Asha", ticket_id="BL-1", question="which browser?")
     asked = messages.ASKED.format(name="Asha", room="bugline-support")
     assert posts == [  # only the reporter is asked, in the thread of their report
-        Post(config.ROOM_SUPPORT, question, thread_id="m1"),
+        Post(SUPPORT, question, thread_id="m1"),
         Post(config.ROOM_ENG, asked, thread_id="t1"),
     ]
     for _ in range(config.REPLIES_PER_MINUTE):  # Asha is at her cooldown limit
@@ -380,7 +408,7 @@ def test_ask_reaches_the_reporter_and_the_answer_comes_back(store: Store) -> Non
 
     assert answer == [  # passed on as it is: no model call, no rate guard
         Post(config.ROOM_ENG, "Asha answered pm's question on BL-1: Firefox 130; on Windows", "t1"),
-        Post(config.ROOM_SUPPORT, messages.ANSWER_PASSED, thread_id="m1"),
+        Post(SUPPORT, messages.ANSWER_PASSED, thread_id="m1"),
     ]
     store.now[0] += config.REPLY_WINDOW_S  # type: ignore[attr-defined]
     models = FakeModels(kind("question"))

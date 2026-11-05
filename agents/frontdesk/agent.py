@@ -1,8 +1,9 @@
 """Run the front desk: `python agent.py` (or `--register` once, `--list-rooms` to find room ids).
 
-Connects to the support room, finds the eng room through the support room's `escalates to`
-link, and connects there too: one Switch connection per room. It hands each addressed message
-to handlers.py and carries out the posts it returns. Messages are handled one at a time on a
+Connects to the support room in .env, finds the eng room through its `escalates to` link, then
+every support room the eng room links back to with `supports`, on any chat app: one Switch
+connection per room. It hands each addressed message to handlers.py and carries out the posts
+it returns. Messages are handled one at a time on a
 single worker thread: the Gemini SDK and sqlite3 are blocking, and one thread keeps ticket
 numbers and drafts consistent while the event loop keeps answering pings. A message that fails
 is logged and skipped.
@@ -83,14 +84,24 @@ class Poster:
             await self._post(post.room, post.if_unreachable, result.get("event_id"))
 
     async def _post(self, room: str, body: str, thread_id: str | None) -> None:
-        connection = self.connections[room]
-        result = await self.api.post(connection.connection_id, connection.room_id, body, thread_id)
+        connection = self.connections.get(room)
+        if connection is None:  # a ticket's support room that is no longer linked: no thread
+            result = await self.api.post_without_connection(room, body)
+        else:
+            result = await self.api.post(
+                connection.connection_id, connection.room_id, body, thread_id
+            )
         self._remember(result)
-        log.info("%s <- %s", room, body.splitlines()[0][:80])
+        log.info("%s <- %s", where(room), body.splitlines()[0][:80])
 
     def _remember(self, result: dict | None) -> None:
         if result and result.get("event_id"):
             self.sent.append(result["event_id"])
+
+
+def where(room: str) -> str:
+    """A room as the log names it: `eng`, or a support room's name."""
+    return room if room == config.ROOM_ENG else config.room_name(room)
 
 
 async def verifier_names(api: SwitchApi) -> frozenset[str]:
@@ -140,6 +151,26 @@ async def escalation_room(api: SwitchApi, support: RoomConnection) -> str:
     return targets[0]
 
 
+async def support_rooms(api: SwitchApi, eng: RoomConnection) -> dict[str, str]:
+    """Room id -> name of every support room the eng room links to with SUPPORT_LINK.
+
+    A linked room the front desk is not a member of is logged and left out: it could not
+    connect there.
+    """
+    await eng.connected.wait()
+    rooms = {}
+    for link in await api.call("list_linked_rooms", eng.connection_id) or []:
+        if link.get("label") != config.SUPPORT_LINK:
+            continue
+        name = link.get("target_room_name") or link["target_room_id"]
+        if link.get("access") != "member":
+            log.warning("%s is linked as '%s' but I am not in it", name, config.SUPPORT_LINK)
+            continue
+        rooms[link["target_room_id"]] = name
+    log.info("support rooms: %s", ", ".join(rooms.values()) or "none linked")
+    return rooms
+
+
 async def refresh_intake_rules(api: SwitchApi, support: RoomConnection) -> None:
     """Read the intake rules from the bugline-kit in Switch, so an edit there applies to the next
     message. When Switch cannot give them the repo copy is used; a change of source is logged."""
@@ -164,9 +195,9 @@ async def dispatch(
         msg = await queue.get()
         if msg.message_id in poster.sent:
             continue
-        log.info("%s: %s says %r", msg.room, msg.sender_name, msg.body[:80])
-        if msg.room == config.ROOM_SUPPORT:  # the only room where the rules reach the model
-            await refresh_intake_rules(poster.api, poster.connections[config.ROOM_SUPPORT])
+        log.info("%s: %s says %r", where(msg.room), msg.sender_name, msg.body[:80])
+        if msg.room != config.ROOM_ENG:  # support rooms are where the rules reach the model
+            await refresh_intake_rules(poster.api, poster.connections[msg.room])
         try:
             posts = await loop.run_in_executor(worker, handle, msg, store)
         except Exception:
@@ -186,22 +217,30 @@ async def serve() -> None:
         raise RuntimeError(f"bridge does not offer {missing}")
     verifiers = await verifier_names(api)
 
-    def connection(room: str, room_id: str) -> RoomConnection:
-        return RoomConnection(
-            room, room_id, creds, base_url, connection_id_for(room, config.CONNECTIONS_PATH)
-        )
+    def connection(room: str, room_id: str, key: str) -> RoomConnection:
+        """`room` is what this connection's messages carry and posts address (handlers.Post):
+        ROOM_ENG, or a support room's id. `key` names its stable id in CONNECTIONS_PATH."""
+        connection_id = connection_id_for(key, config.CONNECTIONS_PATH)
+        return RoomConnection(room, room_id, creds, base_url, connection_id)
 
-    support = connection(config.ROOM_SUPPORT, config.support_room_id())
+    first_id = config.support_room_id()
+    first = connection(first_id, first_id, config.ROOM_SUPPORT)  # the id it has always had
     worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="handlers")
     # sqlite3 objects stay on the thread that made them, so the store is made on the worker.
     store = await asyncio.get_running_loop().run_in_executor(worker, Store)
     queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
     try:
         async with asyncio.TaskGroup() as tasks:
-            tasks.create_task(support.run(queue))
-            eng = connection(config.ROOM_ENG, await escalation_room(api, support))
+            tasks.create_task(first.run(queue))
+            eng_id = await escalation_room(api, first)
+            eng = connection(config.ROOM_ENG, eng_id, config.ROOM_ENG)
             tasks.create_task(eng.run(queue))
-            connections = {config.ROOM_SUPPORT: support, config.ROOM_ENG: eng}
+            connections = {config.ROOM_ENG: eng, first_id: first}
+            config.support_rooms.update(await support_rooms(api, eng))
+            for room_id in config.support_rooms:
+                if room_id not in connections:
+                    connections[room_id] = connection(room_id, room_id, room_id)
+                    tasks.create_task(connections[room_id].run(queue))
             tasks.create_task(dispatch(queue, store, Poster(api, connections), worker, verifiers))
     finally:
         await api.aclose()
