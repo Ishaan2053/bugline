@@ -55,6 +55,20 @@ def test_share_summary_when_everyone_has_paid(client, trip, pay):
     }
 
 
+def test_share_summary_for_member_who_paid_nothing(client, trip, pay):
+    pay("Asha", 300)
+    pay("Ravi", 90)
+    response = client.get(f"/share/{trip['group']['share_token']}")
+    assert response.status_code == 200
+    meera = next(m for m in response.json()["members"] if m["name"] == "Meera")
+    assert meera == {
+        "name": "Meera",
+        "total_paid": 0.0,
+        "expenses_paid": 0,
+        "average_expense": 0.0,
+    }
+
+
 def test_unknown_group_and_share_link_return_404(client):
     assert client.post("/groups/999/members", json={"name": "Asha"}).status_code == 404
     assert client.get("/groups/999/balances").status_code == 404
