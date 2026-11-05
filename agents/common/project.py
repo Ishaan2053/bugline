@@ -40,10 +40,12 @@ _TABLES = {
     ),
     "tickets": ("prefix",),
     "report": ("summary", "fields"),
-    "rooms": ("support", "eng", "support_bridge", "eng_bridge"),
+    "rooms": ("support", "eng", "support_bridge", "eng_bridge", "approvers"),
     "agents": ("frontdesk", "reproducer", "fixer"),
 }
-_LISTS = {"protected_paths", "fields"}
+_LISTS = {"protected_paths", "fields", "approvers"}
+# Keys a file may leave out, and the value they then take.
+_OPTIONAL: dict[str, Any] = {"approvers": []}
 _FIELD_KEYS = {"name", "label", "heading", "about", "required"}
 PREFIX_RE = re.compile(r"[A-Z]{1,5}")
 FIELD_NAME_RE = re.compile(r"[a-z][a-z0-9_]*")
@@ -86,6 +88,9 @@ class Project:
     rooms: dict[str, str]  # "support" / "eng" -> room name
     bridges: dict[str, str]  # "support" / "eng" -> chat app, e.g. "telegram"
     agents: dict[str, str]  # "frontdesk" / "reproducer" / "fixer" -> agent name
+    # People on the eng room's chat app who may instruct the fixer besides the owner, by
+    # username or the app's own user id. scripts/bootstrap.py writes them into its access rule.
+    approvers: tuple[str, ...] = ()
 
     @property
     def field_names(self) -> tuple[str, ...]:
@@ -231,6 +236,7 @@ def parse(data: dict[str, Any], path: Path) -> Project:
         rooms={key: tables["rooms"][key] for key in ("support", "eng")},
         bridges={key: tables["rooms"][f"{key}_bridge"] for key in ("support", "eng")},
         agents=dict(agents),
+        approvers=tuple(_strings(tables["rooms"]["approvers"], "approvers", path, "rooms")),
     )
 
 
@@ -241,6 +247,7 @@ def _table(data: dict[str, Any], name: str, keys: tuple[str, ...], path: Path) -
         raise ProjectError(f"{path}: missing table [{name}]")
     if unknown := sorted(set(table) - set(keys)):
         raise ProjectError(f"{path}: unknown key(s) in [{name}]: {unknown}")
+    table = {key: _OPTIONAL[key] for key in keys if key in _OPTIONAL} | table
     if missing := [key for key in keys if key not in table]:
         raise ProjectError(f"{path}: [{name}] is missing {missing}")
     for key in keys:
@@ -253,9 +260,9 @@ def _table(data: dict[str, Any], name: str, keys: tuple[str, ...], path: Path) -
     return table
 
 
-def _strings(values: list[Any], key: str, path: Path) -> list[str]:
+def _strings(values: list[Any], key: str, path: Path, table: str = "project") -> list[str]:
     if not all(isinstance(v, str) and v.strip() for v in values):
-        raise ProjectError(f"{path}: [project] {key} must hold only non-empty strings")
+        raise ProjectError(f"{path}: [{table}] {key} must hold only non-empty strings")
     return values
 
 

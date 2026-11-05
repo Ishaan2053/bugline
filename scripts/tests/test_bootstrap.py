@@ -3,6 +3,7 @@ set up, a dry run sends no write, a missing Telegram room stops with the manual 
 where Switch can create channels gets its rooms from the templates."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -361,6 +362,55 @@ def test_a_setup_from_before_the_verify_handoff_gets_its_two_settings(
     out = capsys.readouterr().out
     assert "agents/frontdesk/.env: updated (SWITCH_REPRODUCER_AGENT_ID)" in out
     assert "agents/coder/.env: updated (FRONTDESK_AGENT_NAME)" in out
+
+
+# How GET /gateway/collaborations/{id}/users lists people Switch has seen on Slack (server 0.31).
+SLACK_USERS = [
+    {"id": "ext-sam", "external_user_id": "U0SAM", "external_username": "sam.k"},
+    {"id": "ext-pm", "external_user_id": "U0PM", "external_username": "pm"},
+]
+
+
+class SlackPeople(FakeSwitch):
+    """The finished setup, with two people Switch has seen on the Slack connection."""
+
+    def read(self, path: str) -> object:
+        if path == "/gateway/collaborations/b-sl/users":
+            return SLACK_USERS
+        return super().read(path)
+
+
+def test_approvers_go_into_the_fixer_access_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.setattr(bootstrap, "PROJECT", replace(bootstrap.PROJECT, approvers=("sam.k",)))
+    fake = SlackPeople(finished=True)
+    sent: list[dict] = []
+    handle = fake.handle
+
+    def record(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            sent.append(json.loads(request.content))
+        return handle(request)
+
+    fake.handle = record  # type: ignore[method-assign]
+    run(fake, make_layout(tmp_path, registered=True), False)
+
+    [body] = sent  # only the fixer's rule changes
+    [rule] = body["policy"]["rules"]
+    assert rule["users"] == ["ext-sam"] and rule["owner"] is True and rule["rooms"] == [ENG]
+    assert (
+        "bugline-fixer (the owner and sam.k, in bugline-eng only): updated"
+        in capsys.readouterr().out
+    )
+
+
+def test_an_approver_switch_has_not_seen_stops_with_what_to_do(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bootstrap, "PROJECT", replace(bootstrap.PROJECT, approvers=("nobody",)))
+    with pytest.raises(bootstrap.Stop, match="0 people called 'nobody'.*post once in bugline-eng"):
+        run(SlackPeople(finished=True), make_layout(tmp_path, registered=True), False)
 
 
 def test_a_second_project_gets_its_own_kit_and_documents(
