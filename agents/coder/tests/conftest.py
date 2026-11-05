@@ -8,7 +8,8 @@ import config
 
 
 @pytest.fixture
-def settings(tmp_path: Path) -> config.Settings:
+def settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> config.Settings:
+    monkeypatch.setattr(config, "STATE_ROOT", tmp_path / "state")  # the rendered brief goes here
     brief = tmp_path / "reproducer.md"
     brief.write_text("TEST BRIEF", encoding="utf-8")
     role = config.ROLES["reproducer"]

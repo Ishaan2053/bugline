@@ -28,7 +28,7 @@ def fake_claude(script: str) -> list[str]:
 def test_command_appends_the_brief_and_allows_only_the_roles_tools(settings) -> None:
     cmd = claude_command(settings, "claude")
     assert cmd[:2] == ["claude", "-p"]
-    assert cmd[cmd.index("--append-system-prompt-file") + 1] == str(settings.brief)
+    assert cmd[cmd.index("--append-system-prompt-file") + 1] == str(settings.rendered_brief)
     assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
     allowed = cmd[cmd.index("--allowedTools") + 1 : cmd.index("--disallowedTools")]
     denied = cmd[cmd.index("--disallowedTools") + 1 :]

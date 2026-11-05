@@ -25,6 +25,16 @@ def state(tmp_path, monkeypatch) -> Path:
     return tmp_path / "state"
 
 
+def test_a_document_from_switch_replaces_the_repo_copy(state) -> None:
+    settings = config.settings("fixer")  # fix-policy.md, then repro-checklist.md
+    text = write_brief(settings, {"fix-policy.md": "POLICY AS EDITED IN SWITCH"}).read_text(
+        encoding="utf-8"
+    )
+    assert "POLICY AS EDITED IN SWITCH" in text
+    assert "# Fix policy" not in text  # the repo copy of that one is not used
+    assert "# Reproduction checklist" in text  # the one Switch did not give comes from the repo
+
+
 @pytest.mark.parametrize("role", list(config.ROLES))
 def test_each_role_renders_its_brief_and_documents(state, role) -> None:
     settings = config.settings(role)

@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -170,6 +170,31 @@ class SwitchApi:
             "POST", f"/agents/{self.agent_id}/ops/{op}", json=body, headers=headers
         )
         return data.get("result")
+
+    async def room_documents(self, connection_id: str, names: Iterable[str]) -> dict[str, str]:
+        """Name -> text of the named documents attached to the connection's room, on their own or
+        in a package (the bugline-kit). `list_references` says what is attached and
+        `load_internal_documents` reads it. A name the room lacks is left out, and if Switch
+        cannot answer the result is empty, so the caller falls back to its repo copy.
+        """
+        wanted = set(names)
+        if not wanted:
+            return {}
+        try:
+            attached = await self.call("list_references", connection_id) or {}
+            packaged = [d for p in attached.get("packages", []) for d in p.get("documents", [])]
+            ids = {
+                d["id"]: d["name"]
+                for d in [*attached.get("documents", []), *packaged]
+                if d.get("name") in wanted
+            }
+            if not ids:
+                return {}
+            loaded = await self.call("load_internal_documents", connection_id, ids=list(ids))
+        except (OpError, httpx.HTTPError) as exc:
+            log.warning("could not read %s from Switch: %s", sorted(wanted), exc)
+            return {}
+        return {ids[d["id"]]: d["content"] for d in loaded or [] if d.get("id") in ids}
 
     async def post(
         self, connection_id: str, room_id: str, body: str, thread_id: str | None = None

@@ -137,7 +137,8 @@ class FakeSwitch:
                 "content": doc_text(name),
             }
         if path == "/gateway/packages":
-            return [{"id": PKG, "name": KIT}] if done else []
+            kit = {"id": PKG, "name": KIT, "instructions": bootstrap.KIT_INSTRUCTIONS}
+            return [kit] if done else []
         if path == f"/gateway/packages/{PKG}/references":
             return [{"id": REF}]
         if path == f"/gateway/rooms/{ENG}/references":

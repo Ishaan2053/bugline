@@ -20,7 +20,6 @@ import logging
 import shutil
 import sys
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
 from functools import partial
 from pathlib import Path
 
@@ -139,12 +138,22 @@ class Coder:
         self.current = ticket_in(msg.body, *(str(e.get("body", "")) for e in thread)) or (
             self.current
         )
+        await self.refresh_brief()
         result = await self.runner(build_prompt(self.settings, msg, thread))
         log.info("claude answered (ok=%s):\n%s", result.ok, result.text)
         if result.ok:
             await self.answer(trim_reply(result.text), msg)
         else:
             await self._post(f"Could not finish: {result.text[:300]}", msg)
+
+    async def refresh_brief(self) -> None:
+        """Rewrite the brief with the role's documents as the bugline-kit in Switch holds them, so
+        an edit there applies to this run. A document Switch cannot give comes from the repo."""
+        names = [path.name for path in self.settings.docs]
+        from_switch = await self.api.room_documents(self.connection.connection_id, names)
+        write_brief(self.settings, from_switch)
+        repo = [name for name in names if name not in from_switch]
+        log.info("brief documents from Switch: %s; from the repo: %s", list(from_switch), repo)
 
     def handoff(self, reply: str) -> tuple[dict[str, tuple[str, ...]], str] | None:
         """Whom a reply hands work to, and the note to post if they cannot see it; None if no one.
@@ -219,9 +228,9 @@ async def serve(settings: config.Settings) -> None:
         raise RuntimeError(f"brief {settings.brief} not found; set CODER_BRIEF")
     if not settings.clone.is_dir():
         raise RuntimeError(f"{settings.clone} not found; clone the repo there (see README.md)")
-    # From here on Claude Code reads the rendered copy, with the project's names filled in.
-    settings = replace(settings, brief=write_brief(settings))
-    log.info("brief rendered for %s into %s", config.PROJECT.name, settings.brief)
+    # Claude Code reads the rendered copy, with the project's names filled in. It is rewritten
+    # before each run with the documents from Switch; this first one proves the brief renders.
+    log.info("brief rendered for %s into %s", config.PROJECT.name, write_brief(settings))
 
     base_url = config.switch_api_url()
     creds = load_credentials(settings.credentials_path)

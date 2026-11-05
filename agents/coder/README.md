@@ -53,7 +53,7 @@ program. The brief is the second line of defence. The code adds no third one.
 | `FRONTDESK_AGENT_NAME` | none; bootstrap writes it | Where the reproducer sends its verdict. Unset: the verdict is posted plainly and reaches the front desk through `@frontdesk` |
 | `CODER_ROLE` | required | `reproducer` or `fixer`; set it per shell |
 | `CODER_AGENT_NAME` | `[agents]` in `bugline.toml` (`bugline-repro` / `bugline-fixer`) | Switch agent name |
-| `CODER_BRIEF` | `switch/agent-briefs/<role>.md` | Brief. At start it is filled with the names in `bugline.toml`, followed by the role's documents from `switch/docs/`, and written to `state/<agent name>/brief.md`, which every run reads |
+| `CODER_BRIEF` | `switch/agent-briefs/<role>.md` | Brief. Before each run it is filled with the names in `bugline.toml`, followed by the role's documents as the `bugline-kit` in Switch holds them (the `switch/docs/` copy if Switch cannot answer), and written to `state/<agent name>/brief.md`, which that run reads |
 | `CODER_WORKDIR` | `C:\bugline-agents\<agent name>`; `~/bugline-agents/<agent name>` off Windows | Holds the clone (`clone_dir` in `bugline.toml`, `bugline` by default), where Claude Code runs |
 | `CODER_CLAUDE_BIN` | `claude` | Path to the Claude Code CLI |
 | `CODER_TIMEOUT_S` | `1800` | Seconds before a run is stopped |

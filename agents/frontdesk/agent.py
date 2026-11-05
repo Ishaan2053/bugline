@@ -32,6 +32,7 @@ from common.switch_client import (
     register,
 )
 
+import classify
 import config
 import handlers
 from handlers import Post
@@ -139,6 +140,16 @@ async def escalation_room(api: SwitchApi, support: RoomConnection) -> str:
     return targets[0]
 
 
+async def refresh_intake_rules(api: SwitchApi, support: RoomConnection) -> None:
+    """Read the intake rules from the bugline-kit in Switch, so an edit there applies to the next
+    message. When Switch cannot give them the repo copy is used; a change of source is logged."""
+    name = config.INTAKE_RULES_PATH.name
+    text = (await api.room_documents(support.connection_id, [name])).get(name)
+    if (text is None) != (classify.intake_rules_from_switch is None):
+        log.info("intake rules now from %s", "the repo copy" if text is None else "Switch")
+    classify.intake_rules_from_switch = text
+
+
 async def dispatch(
     queue: asyncio.Queue[IncomingMessage],
     store: Store,
@@ -154,6 +165,8 @@ async def dispatch(
         if msg.message_id in poster.sent:
             continue
         log.info("%s: %s says %r", msg.room, msg.sender_name, msg.body[:80])
+        if msg.room == config.ROOM_SUPPORT:  # the only room where the rules reach the model
+            await refresh_intake_rules(poster.api, poster.connections[config.ROOM_SUPPORT])
         try:
             posts = await loop.run_in_executor(worker, handle, msg, store)
         except Exception:
