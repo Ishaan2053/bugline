@@ -3,6 +3,7 @@ httpx.MockTransport stands in for the HTTP routes. Nothing leaves the machine.""
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -32,7 +33,8 @@ def frame(event: str, data: dict, seq: int | None = None) -> str:
     return json.dumps(out)
 
 
-def message(seq: int, body: str, addressed: bool) -> str:
+def message(seq: int, body: str, addressed: bool, sent: float | None = None) -> str:
+    """A message event; `sent` is its time in epoch seconds (now when left out)."""
     payload = {
         "addressed": addressed,
         "sender": "@switch-user-ab12:localhost",
@@ -42,6 +44,7 @@ def message(seq: int, body: str, addressed: bool) -> str:
         "message_id": f"m{seq}",
         "body": body,
         "thread_id": None,
+        "timestamp": int((time.time() if sent is None else sent) * 1000),
     }
     data = {"type": "message", "room_id": "room-s", "payload": payload, "sequence": seq}
     return frame("message", data, seq)
@@ -99,6 +102,7 @@ def test_pong_carries_cursor_and_only_addressed_messages_are_queued() -> None:
         "m12",
         None,
         "owner",
+        queued[0].timestamp_ms,
     )
     assert conn.rooms == ["room-s"] and conn.generation == 3
     assert conn.connected.is_set()  # what an agent waits on to take its role
@@ -106,6 +110,25 @@ def test_pong_carries_cursor_and_only_addressed_messages_are_queued() -> None:
     assert request.headers["Authorization"] == "Bearer key-1"
     assert urlsplit(request.path).path == "/agents/agent-1/connection/ws"
     assert parse_qs(urlsplit(request.path).query) == {"connection_id": ["c-1"], "rooms": ["room-s"]}
+
+
+def test_old_and_repeated_messages_are_not_handed_on(caplog) -> None:
+    """What a server that re-delivers history sends: an approval from hours ago, and a message
+    that already arrived on this connection."""
+    hours_ago = time.time() - 3 * 3600
+
+    async def script(ws, _attempt: int) -> None:
+        await ws.send(frame("connection_state", {"rooms": ["room-s"], "cursor": 10}))
+        await ws.send(message(11, "@fixer go on BL-3", addressed=True, sent=hours_ago))
+        await ws.send(message(12, "@frontdesk the share link errors", addressed=True))
+        await ws.send(message(12, "@frontdesk the share link errors", addressed=True))
+        await ws.close(4401, "stop the test")
+
+    queued, _ = run_against(script, [])
+
+    assert [m.message_id for m in queued] == ["m12"]
+    assert "ignored m11 from Asha, sent 180 min ago" in caplog.text
+    assert "m12 was delivered again; ignored" in caplog.text
 
 
 def test_reconnect_reuses_connection_id_and_resumes_from_cursor() -> None:
