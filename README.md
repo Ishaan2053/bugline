@@ -25,9 +25,9 @@ carries part of the loop:
 | Switch primitive | What Bugline uses it for | Without it |
 | --- | --- | --- |
 | Rooms on two chat apps | `bugline-support` is a Telegram group, `bugline-eng` is a Slack channel. Both are Switch rooms, and the front desk is a member of both. | You write and host a Telegram bot, a Slack bot and a bridge between them, and map users across both. |
-| Room links | `bugline-support` → `bugline-eng` "escalates to"; `bugline-eng` → `bugline-support` "supports". The front desk knows only the support room's id. At start it asks Switch where the "escalates to" link points (`list_linked_rooms`) and sends every report there; remove the link and it refuses to start. A link grants no access: the front desk, a member of both rooms, carries each report across. | The engineering room's id is hard-coded in the front desk, and moving the team to another room means redeploying it. |
+| Room links | `bugline-support` → `bugline-eng` "escalates to"; `bugline-eng` → `bugline-support` "supports". The front desk knows only the support room's id. At start it asks Switch where the "escalates to" link points (`list_linked_rooms`) and sends every report there; remove the link and it refuses to start. It then serves every room `bugline-eng` links back to with "supports", on any chat app: `bootstrap.py --add-support mattermost` adds one with no code or `.env` change, and one ticket can gather reporters from Telegram and Mattermost, each told "fixed" in their own app. A link grants no access: the front desk, a member of every room, carries each report across. | The engineering room's id is hard-coded in the front desk, and each extra support app is another bot to write, host and wire up. |
 | Shared role `reproducer` | The front desk's ticket addresses `@reproducer`. Whoever holds the role gets it. | Tickets go to a hard-coded agent name. |
-| Exclusive role `fixer` + access rule | One agent at a time holds `fixer`. The access rule on `bugline-fixer` admits only its owner (the PM), only in `bugline-eng`. In the live run a second Switch user, `sam`, wrote `@fixer fix BL-2 now`; Switch answered "You're not permitted to direct messages to me in this room — my operator has restricted who can address me here." in the fixer's name, and the fixer program never received the message. This is the approval gate. | The gate is an `if` statement inside the agent, and a prompt can talk its way past it. |
+| Exclusive role `fixer` + access rule | One agent at a time holds `fixer`. The access rule on `bugline-fixer` admits only its owner (the PM), only in `bugline-eng`. In the live run a second Switch user, `sam`, wrote `@fixer fix BL-2 now`; Switch answered "You're not permitted to direct messages to me in this room — my operator has restricted who can address me here." in the fixer's name, and the fixer program never received the message. This is the approval gate. More approvers are one line in `bugline.toml` (`approvers = ["sam.k"]`): `bootstrap.py` writes them into the same rule, and no code changes. | The gate is an `if` statement inside the agent, and a prompt can talk its way past it. |
 | Targeted messages between agents | Three hand-offs, each with `send_targeted_message`, which also says whether the target is reachable. The front desk hands a ticket to whoever holds `reproducer`. The fixer hands its PR to `reproducer` to verify. The reproducer hands its `Verified BL-n` to the front desk by name. Only that line, from the reproducer or from the room owner, closes a ticket: the front desk tells the owner by the `sender_role` Switch puts on each message, and anyone else who names a ticket is told who may close it. | Agents poll a shared database or a queue you build, and anyone in the room can close a ticket. |
 | Aliases | `bugline-frontdesk` is `@frontdesk` in both rooms. An agent holds one role across all rooms, so a per-room alias is how one agent works two rooms. | Users type internal agent names. |
 | Room instructions and the `bugline-kit` package | Each room has its rules from `switch/room-instructions-*.md`. The `bugline-kit` package holds three library documents, `intake-rules.md`, `repro-checklist.md` and `fix-policy.md`, plus the `bugline-repo` GitHub reference, and is attached to both rooms. `scripts/bootstrap.py` copies the documents from `switch/docs/`. The agents read them from Switch (`load_internal_documents`): the front desk before each message in `bugline-support`, the reproducer and the fixer before each run. Edit a document in Switch and the next message follows it; if Switch cannot answer, the agent uses the repo copy. `doctor.py` checks that Switch's copies match `switch/docs/`. | Every agent's prompt carries its own copy of the rules, and changing a rule means redeploying every agent. |
@@ -44,6 +44,9 @@ flowchart LR
     subgraph TG["Telegram: bugline-support"]
         U["End users"]
     end
+    subgraph MM["Mattermost: bugline-support-mattermost (optional)"]
+        U2["More end users"]
+    end
     subgraph SW["Switch"]
         FD["@frontdesk<br/>bugline-frontdesk<br/>custom agent, Gemini"]
         R["@reproducer<br/>bugline-repro<br/>custom agent, Claude Code<br/>shared role"]
@@ -56,6 +59,7 @@ flowchart LR
     GH[("GitHub PR")]
 
     U -- "1. report" --> FD
+    U2 -. "same bug: one ticket" .-> FD
     FD -- "2. ticket BL-n<br/>(room link: escalates to)" --> R
     R -- "3. verdict" --> PM
     PM -- "4. @fixer go on BL-n" --> GATE
@@ -64,6 +68,7 @@ flowchart LR
     F -- "6. please verify BL-n on PR" --> R
     R -- "7. Verified BL-n: PR link" --> FD
     FD -- "8. fixed, with PR link<br/>(reporter + subscribers)" --> U
+    FD -. "8. fixed, in their app" .-> U2
 ```
 
 All three agents are custom agents on the Switch agent protocol, running on the author's Windows
@@ -138,6 +143,17 @@ share a chat app. Run live on Nov 5 on `BL-3`.
 wrote "bhai share link kholte hi error aa raha hai"; the front desk asked for the group id in
 Hinglish, and `BL-4` reached Slack in English with "Reporter: sam (bugline-support, wrote in
 Hinglish)". Each translated reply costs one lite-model call (`translate` in `calls.log`).
+
+**More support rooms, on more apps.** `scripts/bootstrap.py --add-support mattermost` makes
+`bugline-support-mattermost` from the support template and links it to `bugline-eng` like the
+first. The front desk finds it at start through `bugline-eng`'s "supports" link. A Mattermost user
+who reports a bug already open from Telegram is subscribed to the same ticket, and on the close
+each reporter hears in their own app. Unit-tested; not yet run live.
+
+**More approvers.** `approvers = ["sam.k"]` in `bugline.toml` `[rooms]` (usernames on the eng
+room's chat app) and one bootstrap run let `sam.k` tell `@fixer` to go as well, still only in
+`bugline-eng`. Switch enforces it: the fixer's code has no list of names. Unit-tested; not yet
+run live.
 
 PRs #18 and #19 stay open and unmerged on purpose: they remove the seeded faults the demo needs.
 
@@ -252,10 +268,10 @@ pytest -q
 python agent.py --help
 ```
 
-Expect `8 passed` for the demo app and `90 passed, 1 skipped` for the front desk (the skipped test
+Expect `8 passed` for the demo app and `95 passed, 1 skipped` for the front desk (the skipped test
 calls Gemini and runs only with `BUGLINE_LIVE=1`). `agent.py --help` lists `--register` and
 `--list-rooms`. The same `pip install -r requirements-dev.txt` and `pytest -q` work in
-`agents/common` (`30 passed`), `agents/coder` (`25 passed`) and `scripts` (`25 passed`).
+`agents/common` (`34 passed`), `agents/coder` (`28 passed`) and `scripts` (`35 passed`).
 
 ### Part B: Switch, Telegram and Slack
 
@@ -314,6 +330,11 @@ reads the server's address and admin login from Switch Console; anywhere else, s
    (the verify hand-off). It prints `created`, `exists` or `skipped (why)` for each thing, so it
    is safe to run again. A setup from before the verify step needs one more run to get those two
    settings; until then only the room owner can close a ticket.
+
+   Optional: `--add-support mattermost` (or any app where Switch can create channels) adds a
+   second support room, and `approvers` in `bugline.toml` names more people who may approve a
+   fix. Both are described in
+   [switch-setup.md](docs/switch-setup.md#more-support-rooms-and-approvers).
 4. **Start the agents and quiet the rooms.** One terminal each:
 
    ```powershell
@@ -367,7 +388,7 @@ Three agents, one job each. Switch, not the agents, decides who may instruct eac
 | --- | --- | --- | --- | --- | --- |
 | `bugline-frontdesk` | `@frontdesk` (alias in both rooms) | Custom Python agent over the Switch agent protocol ([agents/frontdesk](agents/frontdesk/README.md)); Gemini through `google-genai` | none (an alias, since an agent holds one role across all rooms) | Anyone | [frontdesk.md](switch/agent-briefs/frontdesk.md) |
 | `bugline-repro` | `@reproducer`, `@bugline-repro` | Custom Python agent ([agents/coder](agents/coder/README.md), `CODER_ROLE=reproducer`) that runs Claude Code headless in its own clone | `reproducer`, shared | Its owner (the PM) and the owner's agents, so the front desk (tickets) and the fixer (PRs to verify) | [reproducer.md](switch/agent-briefs/reproducer.md) |
-| `bugline-fixer` | `@fixer`, `@bugline-fixer` | The same program with `CODER_ROLE=fixer` | `fixer`, exclusive | Its owner (the PM) only, in `bugline-eng` only | [fixer.md](switch/agent-briefs/fixer.md) |
+| `bugline-fixer` | `@fixer`, `@bugline-fixer` | The same program with `CODER_ROLE=fixer` | `fixer`, exclusive | Its owner (the PM), plus any `approvers` in `bugline.toml`, in `bugline-eng` only | [fixer.md](switch/agent-briefs/fixer.md) |
 
 The coders run Claude Code with `--permission-mode dontAsk`, a per-role allow list and a deny list
 (the reproducer cannot commit, push or call `gh`; neither can force-push, push `main` or merge).
@@ -475,6 +496,12 @@ faults 1 and 2 are left out on purpose; the fixer adds them during the demo.
 ## Limits and next steps
 
 - The limit of 5 open tickets per user is unit-tested but was not hit in the live run.
+- An agent ignores a message more than 30 minutes old when it arrives, and any message it has
+  already handled. On Nov 6 a restart of Switch's own database sent every agent its whole history
+  again, including old `@fixer go` approvals; the fixer ran none of them, and since then a
+  connection with nothing delivered yet starts at the newest message. The cost: a message sent
+  while an agent was down for more than 30 minutes is not answered when it comes back (its log
+  names it).
 - `scripts/bootstrap.py` set up a second copy from nothing on Nov 5 (new agents, rooms, rules,
   links and kit, on [Mattermost](docs/switch-setup.md#mattermost-only-no-telegram-or-slack)), but on
   a server that already had the demo,

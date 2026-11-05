@@ -439,15 +439,18 @@ Never cut: cross-app handoff, refusal moment, loop closing back to the reporter,
 
 | Time | Beat | On screen |
 | --- | --- | --- |
-| 0:00–0:20 | Hook | Both rooms quiet; one-line pitch |
-| 0:20–0:50 | Report | User reports in Telegram; frontdesk asks for the group id |
-| 0:50–1:20 | Handoff | Structured report appears in `#bugline-eng` tagging `@reproducer` |
-| 1:20–1:50 | Reproduce | Script, traceback, likely cause |
-| 1:50–2:10 | Refusal | Second Slack user: "@fixer fix it" → refused |
-| 2:10–2:40 | Approve + fix | PM instruction; branch, tests, PR link |
-| 2:40–3:00 | Close the loop | "BL-1 fixed — PR link" in Telegram |
-| 3:00–3:30 | Quiet paths | Question answered without escalation; vague report asked for details; duplicate matched to `BL-1` and the second reporter notified on close; off-topic dropped; "could not reproduce" |
-| 3:30–3:50 | Reproduce it | README section, template import, `docker compose up` |
+| 0:00–0:15 | Hook | Both rooms quiet; one-line pitch |
+| 0:15–0:40 | Report | User reports in Telegram; frontdesk asks for the group id |
+| 0:40–1:00 | Handoff | Structured report appears in `#bugline-eng` tagging `@reproducer` |
+| 1:00–1:25 | Reproduce | Script, traceback, likely cause |
+| 1:25–1:40 | Second app | A Mattermost user reports the same bug in `bugline-support-mattermost` → "already tracked as BL-1" |
+| 1:40–1:55 | Refusal | Second Slack user: "@fixer fix it" → refused by Switch |
+| 1:55–2:20 | Approve + fix | PM instruction; branch, tests, PR link |
+| 2:20–2:35 | Verify | Fixer hands the PR to `@reproducer`; "Verified BL-1: PR link" |
+| 2:35–2:55 | Close the loop | "BL-1 is fixed — PR link" lands in Telegram and in Mattermost |
+| 2:55–3:10 | Approvers | `approvers = [...]` in `bugline.toml`, one bootstrap run, the same second user's `@fixer` now goes through. No code change |
+| 3:10–3:35 | Quiet paths | Question answered without escalation; vague report asked for details; off-topic dropped; "could not reproduce" |
+| 3:35–3:55 | Reproduce it | README section, `bootstrap.py`, `doctor.py` all PASS, `docker compose up` |
 
 ## 11. Links
 
