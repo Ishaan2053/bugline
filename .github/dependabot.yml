@@ -32,6 +32,10 @@ updates:
       - /agents/frontdesk
     schedule:
       interval: monthly
+    # The projects target Python 3.14 (ruff py314, CI 3.14.x): take 3.14 patch releases only.
+    ignore:
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
     groups:
       docker:
         patterns: ["*"]
