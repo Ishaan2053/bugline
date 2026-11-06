@@ -1,0 +1,39 @@
+# Monthly version updates, grouped so each ecosystem opens at most one PR at a time.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directories:
+      - /demo-app
+      - /agents/common
+      - /agents/frontdesk
+      - /agents/coder
+      - /scripts
+    schedule:
+      interval: monthly
+    groups:
+      pip:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    labels: [infra]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    labels: [infra]
+
+  - package-ecosystem: docker
+    directories:
+      - /demo-app
+      - /agents/frontdesk
+    schedule:
+      interval: monthly
+    groups:
+      docker:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    labels: [infra]
