@@ -7,8 +7,7 @@ checklist lives in a Claude Doc; everything an agent needs from it is copied bel
 ## 1. What we are building and why
 
 **Bugline** is our entry for the Flip the Switch Hackathon (WeMakeDevs x DevTools Academy x Switch),
-Track 01 "Best Business Workflow" ($2,000), stacked with the Code with Wispr side track ($500),
-Best Blog and #HowISwitch posts.
+Track 01 "Best Business Workflow" ($2,000), stacked with Best Blog and #HowISwitch posts.
 
 One-line pitch: *Users report bugs in the chat they already use; the team fixes them in the chat they
 already use; Switch carries the work across, keeps a human in charge, and closes the loop back to the
@@ -157,7 +156,7 @@ bugline/
     docs/                   intake-rules.md, repro-checklist.md, fix-policy.md
     agent-briefs/           frontdesk.md, reproducer.md, fixer.md
   scripts/bootstrap.py      one idempotent run: agents, bugline-eng, access rules, links, bugline-kit
-  docs/                     blog draft, video script, screenshots, wispr-scorecard.png
+  docs/                     switch-setup.md, own-repo.md, build-journal.md, images/ (screenshots)
 ```
 
 ## 4. Stack and conventions
@@ -294,7 +293,7 @@ bugline/
 - When something is unverified (Console on Windows, OpenCode's Google provider, template schema
   support for links and custom agents, exact free-tier limits), say so and propose the cheapest
   test, instead of assuming.
-- Prompts to this agent are often dictated (Wispr Flow). Read them for intent; ask one question if
+- Prompts to this agent are often dictated. Read them for intent; ask one question if
   a spoken instruction is ambiguous instead of guessing.
 - Naming: the intake agent is `@frontdesk` and its rules file is `intake-rules.md`. Do not use the
   word "triage" anywhere in code, docs, README, briefs, commit messages or the video script; the
@@ -321,9 +320,8 @@ Each heading's first sentence answers its criterion.
 6. The agents: runtime, role, access rule, link to each brief
 7. The problem this solves for a real team (Creativity and impact)
 8. What the agents got wrong and how the briefs fixed it
-9. Built with Wispr Flow (scorecard image)
-10. Limits and next steps
-11. Licence and credits
+9. Limits and next steps
+10. Licence and credits
 
 ## 9. Day-by-day checklist
 
@@ -334,7 +332,6 @@ clone and are on video.
 
 - [ ] Register for the hackathon; star `sandbox-quantum/switch`; join the WeMakeDevs Discord
 - [ ] Ask in Discord: judging weights? one project in two tracks? video length limit? submission form?
-- [ ] Start Wispr Flow Pro via the WEMAKEDEVS promo; confirm Insights records
 - [x] Create repo `bugline` (MIT; private until submission, flip to public before Nov 7); commit this file and `AGENTS.md` on `docs/bootstrap`,
       open the first PR, squash-merge it
 - [x] Protect `main`: require a PR, allow squash merge only, delete branches on merge; create the
@@ -416,7 +413,6 @@ clone and are on video.
 
 ### Day 4 — Nov 7 (polish, publish, submit by 9 PM IST)
 
-- [ ] Wispr Insights scorecard screenshot → `docs/` and README
 - [ ] Final fresh-clone test; fix README gaps only
 - [ ] Final video export; link opens in a private window
 - [ ] Blog published (dev.to or Hashnode, tags `switch`, `wemakedevs`, `hackathon`); link in Discord
@@ -424,14 +420,14 @@ clone and are on video.
 - [ ] All PRs squash-merged; no open branches; `main` history reads as one line per PR
 - [ ] Final version check: every pinned dependency is still the newest compatible release
 - [ ] README checked against the judging table; tag `v1.0-hackathon`
-- [ ] Submit: repo, video, README, Track 01, Wispr scorecard, blog link; confirmation screenshot
+- [ ] Submit: repo, video, README, Track 01, blog link; confirmation screenshot
 
 ### If behind, cut in this order
 
 1. Fault 2 (rounding)
 2. PR opening — fixer posts diff + test output instead
 3. Room template — replaced by `scripts/bootstrap.py` + documented manual setup
-4. Blog — keep the Wispr screenshot before the blog
+4. Blog
 
 Never cut: cross-app handoff, refusal moment, loop closing back to the reporter, fresh-clone test.
 
