@@ -153,6 +153,21 @@ room has another name, pass `--support-room <name or id>`.
 
 A link tells agents the other room exists. It does not let anyone into it.
 
+What the agents read from Switch at run time:
+
+- **The links.** The front desk knows only the support room's id. At start it asks Switch where
+  the "escalates to" link points (`list_linked_rooms`) and sends every report there; with no link
+  it refuses to start. It also serves every room `bugline-eng` links back to with "supports".
+- **The kit.** The front desk loads `intake-rules.md` from `bugline-kit` before each message in a
+  support room, and the coders rebuild their brief from the kit before each run
+  (`list_references`, then `load_internal_documents`). Edit a document in Switch and the next
+  message follows it. If Switch cannot answer, the agent uses the repo copy. `doctor.py` checks
+  that Switch's copies match `switch/docs/`, so after you change a file there, run bootstrap
+  again.
+- **Who may close a ticket.** The front desk tells the room owner by the `sender_role` Switch puts
+  on each message, and the reproducer by its agent id, which bootstrap writes into
+  `agents/frontdesk/.env`.
+
 ### Other chat apps
 
 Each room can be on any chat app Switch connects. `--support-bridge` and `--eng-bridge` take the
@@ -451,6 +466,10 @@ Read before the first live run:
   "Full admin interface", and the gateway port answers 404 for every path. The Gateway API still
   works under `<api>/gateway/...`, which is what bootstrap uses. It signs in as the local admin
   whose login Console keeps in `%APPDATA%\switchdash\local-switch-server\native\run\switch-core.env`.
+- **Console does not list Bugline's agents.** Switch Console's agent list shows only its own
+  `switch-buddy-admin`. Bugline's three agents are custom agents registered over the agent
+  protocol, which Console does not list. They are on the server: `doctor.py` checks each one, and
+  `GET /gateway/agents` lists them.
 - **Providers say "Not supported here".** Console cannot run managed coding agents on Windows
   ("SDK sessions require a POSIX SSH execution host"). That is why the reproducer and the fixer
   are custom agents in `agents/coder`. The template has no `agents:` block for the same reason;

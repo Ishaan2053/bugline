@@ -247,3 +247,27 @@ the front desk took the eng room from `.env` and the rules from the repo.
   Admin reported fault 1 in Telegram (`BL-1`), and `sam`'s Mattermost duplicate was matched to
   it. 78 s from approval to "BL-1 is fixed" in both apps (PR #61, closed by the reset).
   Approvers are still not run live: they need a real second Slack account.
+
+## 2026-11-07
+
+Submission day. No new features: clean-up, CI/CD and a first release.
+
+- PR #63: dropped the side track the project no longer enters, and every mention of it.
+- PR #64, housekeeping: `.gitignore` covers `.claude` worktrees, CLAUDE.md matches the tree, a
+  broken anchor in `repro-checklist.md` is fixed, and the front desk's README and `.env.example`
+  match its code again.
+- PR #65, CI/CD: CI now builds both Docker images and smoke-tests the demo app under Compose, and
+  checks every relative link and anchor in the Markdown files, offline. A new release workflow
+  runs on `v*` tags: the tests, then multi-arch images (amd64 and arm64) to GHCR, then a GitHub
+  Release with generated notes.
+- PR #67: minutes after #65 merged, Dependabot opened a PR moving the base image to Python 3.15.
+  The projects target 3.14, so Dependabot now takes 3.14 patch releases only.
+- This PR: the README for judges. Shorter, badges, screenshot placeholders named after the shots
+  the author takes, current test counts, a Docker images note, the CI and release workflows, and
+  the one README anchor the link check had to skip, now fixed.
+- Broke: the agent tool's worktree isolation refused to start, because the repo path resolved
+  as `D:` in one place and `d:` in another. Fixed by making the worktrees by hand.
+- Note: the anchor fix in `repro-checklist.md` changed a kit document, so `bootstrap.py` must
+  run once to update the `bugline-kit` copy in Switch. `doctor.py` flags the difference until
+  then.
+- Release tag `v0.1.0` follows this PR.

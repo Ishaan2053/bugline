@@ -104,12 +104,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
-      # Offline: relative file links and #anchors only, no web requests. The one excluded URL is
-      # a stale anchor in README.md that the README clean-up fixes; drop the exclude after that.
+      # Offline: relative file links and #anchors only, no web requests.
       - uses: lycheeverse/lychee-action@v2.9.0
         with:
           args: >-
             --offline --no-progress --include-fragments
             --exclude-path '\.claude'
-            --exclude 'intake-rules\.md#handing-a-bug-to-bugline-eng$'
             './**/*.md'
