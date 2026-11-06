@@ -36,8 +36,8 @@ One dated entry per session: what was done, what broke, what fixed it.
 - Fresh-clone test passed: `docker compose up --build -d` serves the app, `/share/goa-trip-share`
   returns the planted 500, both test suites pass. CI runs ruff and pytest for both projects on
   every PR and is required on `main`.
-- Judge-facing README merged, with author placeholders for the GIF, video, screenshots, call
-  counts and the Wispr scorecard.
+- Judge-facing README merged, with author placeholders for the GIF, video, screenshots and call
+  counts.
 - Not done yet, needs the Switch server: registering the front desk, both rooms, the managed
   reproducer and fixer, the refusal test and the full loop. Everything that rests on an unverified
   protocol detail is tagged "(unverified)" in `docs/switch-setup.md` and in the PR descriptions.

@@ -464,13 +464,6 @@ What reading the Switch docs and server source changed before the first run is i
 [switch-setup.md](docs/switch-setup.md#what-the-switch-docs-and-server-source-changed). The
 day-by-day record is in [docs/build-journal.md](docs/build-journal.md).
 
-## Built with Wispr Flow
-
-<!-- author: one or two sentences on what you dictated with Wispr Flow (prompts, journal,
-reviews) and what the Insights numbers show -->
-
-<!-- author: add the Wispr Insights scorecard image (docs/wispr-scorecard.png) -->
-
 ## Repo layout
 
 ```text
