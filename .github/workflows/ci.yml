@@ -2,7 +2,8 @@
 # demo app, and checks relative links in the Markdown files. Runs on every PR and on main, and
 # release.yml calls it before it publishes anything.
 # The `test` job name and its matrix values are the required checks on main
-# (`test (demo-app)`, `test (agents/frontdesk)`): do not rename them.
+# (`test (demo-app)`, `test (agents/frontdesk)`, `test (agents/common)`, `test (agents/coder)`):
+# do not rename them.
 name: ci
 
 on:
@@ -21,7 +22,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # github.workflow is the caller's name inside workflow_call, so a release run never shares a
+  # group with (and never cancels, or is cancelled by) CI on the same branch.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

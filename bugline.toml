@@ -3,8 +3,8 @@
 # it and says what is wrong. Paths are relative to the repo you fix, except `user_guide`, which
 # the front desk reads on this machine, relative to this file.
 #
-# The shipped values are the expense-splitter demo in this repo. README.md, "Run it on your own
-# repo", says what to change.
+# The shipped values are the expense-splitter demo in this repo. docs/own-repo.md says what to
+# change.
 
 [project]
 name = "bugline"
