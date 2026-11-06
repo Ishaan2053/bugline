@@ -1,8 +1,8 @@
 # Bugline front desk
 
-`@frontdesk` is a custom Python agent that speaks the Switch agent protocol. It sits in two rooms:
+`@frontdesk` is a custom Python agent that speaks the Switch agent protocol. It sits in
 `bugline-support` (Telegram), where users report problems, and `bugline-eng` (Slack), where the
-team works. It answers questions, asks for missing details, hands complete bugs to `@reproducer`
+team works, and in any other support room `bugline-eng` links back to. It answers questions, asks for missing details, hands complete bugs to `@reproducer`
 as ticket `BL-n`, and tells every reporter when the fix lands. The rules it follows are in
 [CLAUDE.md section 2](../../CLAUDE.md#2-architecture); the protocol facts are in
 [CLAUDE.md section 5](../../CLAUDE.md#5-switch-protocol-facts-for-the-custom-frontdesk) and the
@@ -16,10 +16,10 @@ as ticket `BL-n`, and tells every reporter when the fix lands. The rules it foll
 | `../common/` | Code shared with the other custom agents: the Switch client (registration, one WebSocket per room, ops), the ticket id format, `.env` loading |
 | `handlers.py` | What to do with one message; returns posts, so it is tested without a socket |
 | `messages.py` | Every text the agent posts, including the escalation and close formats |
-| `classify.py` | The Gemini calls: classify, duplicate check, answer a question |
+| `classify.py` | The Gemini calls: classify, duplicate check, answer a question, translate a reply |
 | `store.py` | SQLite: tickets, subscribers, drafts, muted threads, rate guards |
 | `config.py` | Every setting and environment variable |
-| `prompts/` | The three prompt templates |
+| `prompts/` | The four prompt templates, one per Gemini call |
 
 ## Set up once
 
@@ -29,7 +29,7 @@ as ticket `BL-n`, and tells every reporter when the fix lands. The rules it foll
    front desk it registers the agent (the same call as `python agent.py --register`, which writes
    `state/credentials.json`), opens it to **Anyone** (Telegram users have no Switch account, and
    the agent cannot change this itself), puts it in both rooms with the alias `@frontdesk`, and
-   writes `SWITCH_API_URL` and both room ids into `.env`.
+   writes `SWITCH_API_URL`, both room ids and `SWITCH_REPRODUCER_AGENT_ID` into `.env`.
 3. Start it with `python agent.py`.
 
 Without bootstrap: set `SWITCH_API_URL` and `SWITCH_REGISTRATION_KEY`, run `--register`, have the

@@ -44,9 +44,9 @@ Two rooms on two chat apps, linked in Switch; three agents in three roles; one h
 Telegram · bugline-support                 Slack · bugline-eng
 ┌──────────────────────┐                   ┌──────────────────────────────────────┐
 │  End user            │                   │  @reproducer ──repro──▶ PM (human)   │
-│    │ report          │   bug report      │  OpenCode/Claude Code    │ "@fixer go"│
+│    │ report          │   bug report      │  Claude Code headless    │ "@fixer go"│
 │    ▼                 │ ───────────────▶  │  shared role             ▼           │
-│  @frontdesk            │   (room link      │                        @fixer        │
+│  @frontdesk          │   (room link      │                        @fixer        │
 │  custom Gemini agent │    "escalates to")│  ◀───── PR link + result  exclusive  │
 │    │ resolved        │                   │                          PM only     │
 │    ▼ End user        │                   └──────────────────────────────────────┘
@@ -139,24 +139,34 @@ absent; the fixer adds them during the demo.
 ```
 bugline/
   CLAUDE.md                 this file
-  AGENTS.md                 one line pointing OpenCode here
+  AGENTS.md                 short pointer to this file, for OpenCode
   README.md                 judge-facing; structure in section 8
   LICENSE                   MIT
   bugline.toml              the project the agents work on: repo, paths, test command, ticket
                             prefix, report fields, room and agent names (BUGLINE_CONFIG = another)
-  demo-app/                 FastAPI app, tests, Dockerfile, docker-compose.yml, seed.py
+  docker-compose.yml        the demo app; the front desk under the `agents` profile
+  .github/workflows/        CI (ruff and pytest for every Python project on each PR) and the
+                            release on a version tag
+  demo-app/                 FastAPI app, tests, Dockerfile, seed.py
   agents/common/            Switch protocol client, ticket id format, .env loading, project.py
                             (reads bugline.toml, fills the $placeholders in switch/ files) (shared)
-  agents/frontdesk/           agent.py, prompts/, Dockerfile, .env.example, requirements.txt
+  agents/frontdesk/         agent.py, handlers.py, classify.py, store.py, messages.py, prompts/,
+                            Dockerfile, .env.example
   agents/coder/             bugline-repro and bugline-fixer: one program running Claude Code
   switch/
-    bugline.template.yaml   room template: params / room / kickoff (no agents: block)
+    bugline.template.yaml   room template for bugline-eng: params / room / kickoff (no agents: block)
+    bugline-support.template.yaml   a support room, on chat apps where Switch can create one
     room-instructions-support.md
     room-instructions-eng.md
     docs/                   intake-rules.md, repro-checklist.md, fix-policy.md
     agent-briefs/           frontdesk.md, reproducer.md, fixer.md
-  scripts/bootstrap.py      one idempotent run: agents, bugline-eng, access rules, links, bugline-kit
-  docs/                     switch-setup.md, own-repo.md, build-journal.md, images/ (screenshots)
+  scripts/
+    bootstrap.py            one idempotent run: agents, rooms, access rules, links, bugline-kit;
+                            --add-support makes another support room
+    doctor.py               checks the whole setup, one PASS / FAIL line each
+    reset_demo.py           puts the demo back to a clean start at BL-1
+  docs/                     switch-setup.md, own-repo.md, build-journal.md, images/ (screenshots,
+                            added by the author)
 ```
 
 ## 4. Stack and conventions
@@ -197,9 +207,10 @@ bugline/
   pytest, httpx, `websockets`, `google-genai` SDK — all at their newest compatible releases, pinned.
   No Postgres, no ORM migrations, no frontend.
 - Format with `ruff format`; lint with `ruff check`. Type hints on public functions.
-- One module per concern in the frontdesk: `switch_client.py` (register, WebSocket, ops),
-  `classify.py` (Gemini call + JSON schema), `handlers.py` (bug / question / request paths),
-  `store.py` (SQLite ticket table), `agent.py` (main loop).
+- One module per concern in the frontdesk: `classify.py` (Gemini calls + JSON schema),
+  `handlers.py` (bug / question / request paths), `messages.py` (every posted text), `store.py`
+  (SQLite ticket table), `agent.py` (main loop). The Switch client (register, WebSocket, ops)
+  is `agents/common/switch_client.py`, shared with the coders.
 - Secrets only via environment variables; `.env.example` lists every variable with a comment;
   `.env` is gitignored. **Never commit a key, token, or chat-app secret.**
 - Windows host: paths in docs use `C:\bugline-agents\<agent>` for agent working directories;
@@ -393,7 +404,7 @@ clone and are on video.
 - [ ] Second Telegram account as the "end user"
 - [x] Agent `bugline-fixer`: exclusive role `fixer`; access rule PM-only in `bugline-eng`;
       `gh auth login` in its working directory
-- [ ] Refusal test from a second Slack user → refused
+- [x] Refusal test from a second Slack user → refused
 - [x] Approval test: "@fixer go on BL-1, keep it to the share handler, add a regression test" →
       branch, tests, PR link, mentions `@frontdesk BL-1`
 - [x] Front desk posts "BL-1 is fixed — <PR link>" in Telegram
@@ -401,7 +412,7 @@ clone and are on video.
 
 ### Day 3 — Nov 6 (feature freeze; reproducibility, README, video)
 
-- [ ] `switch/bugline.template.yaml` (`version: 1`, modelled on the official `triage-pair`
+- [x] `switch/bugline.template.yaml` (`version: 1`, modelled on the official `triage-pair`
       template); tested with a fresh team prefix
 - [x] If the template cannot express two rooms / links / the custom agent → `scripts/bootstrap.py`
       via the Gateway API, documented
@@ -419,7 +430,8 @@ clone and are on video.
 - [ ] Three #HowISwitch clips posted with the repo link
 - [ ] All PRs squash-merged; no open branches; `main` history reads as one line per PR
 - [ ] Final version check: every pinned dependency is still the newest compatible release
-- [ ] README checked against the judging table; tag `v1.0-hackathon`
+- [ ] README checked against the judging table; tag `v0.1.0` (the release workflow publishes the
+      images and the GitHub Release)
 - [ ] Submit: repo, video, README, Track 01, blog link; confirmation screenshot
 
 ### If behind, cut in this order
@@ -466,8 +478,10 @@ Never cut: cross-app handoff, refusal moment, loop closing back to the reporter,
   https://github.com/sandbox-quantum/switch/blob/main/examples/agent-templates/triage-pair.template.yaml
 - Chat commands: `!roles` · `!set-alias` · `!follow-ups off` · `!reset`
 
-Unverified as of Nov 4 (test before relying on): Console early-access build on Windows; OpenCode
-with Google as provider inside Console; whether Claude Code is available on the current
-subscription; how long a managed agent's session (and so its role) stays live; refusal wording for an
-unlinked Slack user; exact free-tier limits for
+Verified since Nov 4 (`docs/build-journal.md`, Nov 4 afternoon): Console 0.40.1 on Windows runs
+the server but cannot run coding agents with any provider, OpenCode included; Claude Code is
+available and runs headless in `agents/coder`.
+
+Still unverified (test before relying on): how long a managed agent's session (and so its role)
+stays live; refusal wording for an unlinked Slack user; exact free-tier limits for
 `gemini-2.5-flash` and `gemini-3.5-flash-lite` on this project.
