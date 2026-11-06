@@ -73,11 +73,6 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontdesk
           cache-to: type=gha,scope=frontdesk,mode=max
-      - uses: docker/setup-qemu-action@v4.4.0
-      - name: TEMP arm64 timing demo-app
-        run: time docker buildx build --no-cache --platform linux/arm64 ./demo-app
-      - name: TEMP arm64 timing frontdesk
-        run: time docker buildx build --no-cache --platform linux/arm64 -f agents/frontdesk/Dockerfile ./agents
       # Checks only what the seeded faults leave alone: /share/... and the settle-up sum are
       # faults 1 and 2, and the fixer's PRs change them.
       - name: Smoke test the demo app
