@@ -215,13 +215,19 @@ The 500 on the share link is fault 1, planted on purpose (`ZeroDivisionError` in
 `docker compose logs demo-app`). The `owes` values add up to 9099.99 of 9100.00 spent: that is
 fault 2. Stop the app with `docker compose down`.
 
-**Docker images.** Each tagged release publishes the demo app and front desk images to the GitHub
-Container Registry. The compose file still builds from source; the images are for running a
-release without a clone:
+**Docker images.** Each tagged release (from `v0.1.0`) publishes the demo app and front desk
+images to the GitHub Container Registry; the compose file still builds from source. The demo app
+image runs on its own:
 
 ```bash
-docker pull ghcr.io/ishaan2053/bugline-demo-app:0.1.0
-docker pull ghcr.io/ishaan2053/bugline-frontdesk:0.1.0
+docker run --rm -p 8000:8000 ghcr.io/ishaan2053/bugline-demo-app:0.1.0
+```
+
+The front desk image needs a clone: it reads `bugline.toml` and the intake rules from the repo,
+mounted at `/repo` as in `docker-compose.yml`, and its settings from `agents/frontdesk/.env`:
+
+```bash
+docker run --rm --env-file agents/frontdesk/.env -v "$PWD:/repo:ro"   -e BUGLINE_CONFIG=/repo/bugline.toml   -e FRONTDESK_INTAKE_RULES=/repo/switch/docs/intake-rules.md   ghcr.io/ishaan2053/bugline-frontdesk:0.1.0
 ```
 
 #### Seeded faults

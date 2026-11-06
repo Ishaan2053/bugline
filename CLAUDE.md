@@ -145,8 +145,9 @@ bugline/
   bugline.toml              the project the agents work on: repo, paths, test command, ticket
                             prefix, report fields, room and agent names (BUGLINE_CONFIG = another)
   docker-compose.yml        the demo app; the front desk under the `agents` profile
-  .github/workflows/        CI (ruff and pytest for every Python project on each PR) and the
-                            release on a version tag
+  .github/workflows/        CI (ruff and pytest per Python project, Docker build and smoke test,
+                            Markdown link check) and the release on a version tag
+  .github/dependabot.yml    monthly grouped updates; the base image stays on Python 3.14
   demo-app/                 FastAPI app, tests, Dockerfile, seed.py
   agents/common/            Switch protocol client, ticket id format, .env loading, project.py
                             (reads bugline.toml, fills the $placeholders in switch/ files) (shared)
@@ -404,7 +405,8 @@ clone and are on video.
 - [ ] Second Telegram account as the "end user"
 - [x] Agent `bugline-fixer`: exclusive role `fixer`; access rule PM-only in `bugline-eng`;
       `gh auth login` in its working directory
-- [x] Refusal test from a second Slack user → refused
+- [x] Refusal test from a second Switch user (Gateway chat API) → refused; a second Slack
+      account is not tested yet
 - [x] Approval test: "@fixer go on BL-1, keep it to the share handler, add a regression test" →
       branch, tests, PR link, mentions `@frontdesk BL-1`
 - [x] Front desk posts "BL-1 is fixed — <PR link>" in Telegram
