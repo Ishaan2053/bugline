@@ -1,5 +1,5 @@
 # Expense splitter demo app: seeds the "Goa trip" group on first start, then serves on port 8000.
-FROM python:3.14.10-slim
+FROM python:3.15.0-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

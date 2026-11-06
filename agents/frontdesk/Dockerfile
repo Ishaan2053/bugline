@@ -1,7 +1,7 @@
 # Bugline front desk agent. Built and run by the `frontdesk` service in the root docker-compose.yml.
 # The build context is agents/, so the shared `common` package sits next to the agent as it
 # does in the repo.
-FROM python:3.14.10-slim
+FROM python:3.15.0-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
