@@ -1,0 +1,98 @@
+# Publishes a version: on a tag like v0.1.0 it runs the full CI, pushes the demo-app and frontdesk
+# images to GitHub Container Registry, and creates the GitHub Release with generated notes.
+# Run it by hand (Actions > release > Run workflow) with an existing tag to redo a failed release.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: bugline-demo-app
+            context: ./demo-app
+            file: ./demo-app/Dockerfile
+          - image: bugline-frontdesk
+            context: ./agents
+            file: ./agents/frontdesk/Dockerfile
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+      - uses: docker/setup-qemu-action@v4.4.0
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tags 0.1.0, 0.1, sha-<commit> and latest. The action lower-cases the image name and adds
+      # the OCI labels; org.opencontainers.image.source links the package to this repo.
+      # `context: git` takes the commit from the checked-out tag, also on a manual run.
+      - id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          context: git
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }}
+            type=sha
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha,scope=release-${{ matrix.image }}
+          cache-to: type=gha,scope=release-${{ matrix.image }},mode=max
+
+  release:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      # gh puts these lines above the generated notes.
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          version="${TAG#v}"
+          cat > notes.md <<EOF
+          ## Docker images
+
+          \`\`\`sh
+          docker pull ghcr.io/${owner}/bugline-demo-app:${version}
+          docker pull ghcr.io/${owner}/bugline-frontdesk:${version}
+          \`\`\`
+          EOF
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Bugline $TAG" --notes-file notes.md --generate-notes
