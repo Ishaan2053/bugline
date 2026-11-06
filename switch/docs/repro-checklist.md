@@ -1,7 +1,7 @@
 # Reproduction checklist
 
 How the reproducer turns a ticket into a verdict. A ticket arrives in `$eng_room` in the shape
-given in [intake-rules.md](intake-rules.md#handing-a-bug-to-bugline-eng). The verdict goes in that
+given in [intake-rules.md](intake-rules.md#handing-a-bug-to-eng_room). The verdict goes in that
 ticket's thread.
 
 ## 1. Environment
