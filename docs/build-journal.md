@@ -271,3 +271,6 @@ Submission day. No new features: clean-up, CI/CD and a first release.
   run once to update the `bugline-kit` copy in Switch. `doctor.py` flags the difference until
   then.
 - Release tag `v0.1.0` follows this PR.
+- After the release: screenshots and diagrams from the recorded run went into `docs/images/`
+  (PRs #72 and #73), and the README was cut to a reader-first page. Costs, lessons, limits,
+  layout and CI moved to `docs/design-notes.md`, and the internals diagrams to each agent's README.

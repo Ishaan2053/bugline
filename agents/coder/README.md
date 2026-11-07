@@ -18,6 +18,8 @@ Code for each message.
 
 ## What happens to a message
 
+![One coder job: working on it, read the thread, rebuild the brief from Switch, claude -p, parse JSON, reply or hand off; with the command line, the permissions per role, the hand-offs and the clean-up after a failed run](../../docs/images/coder-run.png)
+
 1. On every connect, the agent takes its role in `bugline-eng` (`assume_role`). Switch posts its
    own notice the first time.
 2. A message addressed to the agent (by name, alias or role) is queued. If a job is running, the

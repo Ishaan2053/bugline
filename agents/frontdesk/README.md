@@ -8,6 +8,13 @@ as ticket `BL-n`, and tells every reporter when the fix lands. The rules it foll
 [CLAUDE.md section 5](../../CLAUDE.md#5-switch-protocol-facts-for-the-custom-frontdesk) and the
 [Switch agent protocol docs](https://docs.switchagents.ai/switch-rooms/internals/agent-protocol).
 
+![Inside the front desk: one RoomConnection per room feeds a queue; one worker thread runs the handlers, Gemini and SQLite; the Poster sends each post on the right connection](../../docs/images/frontdesk-runtime.png)
+
+A support message goes through five checks that cost no model call before the front desk asks
+Gemini anything:
+
+![A support message: five free checks, then classify, then the duplicate check](../../docs/images/support-ladder.png)
+
 ## Files
 
 | File | What it does |
