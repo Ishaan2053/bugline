@@ -31,7 +31,7 @@ Judging criteria (assume equal weight):
 | Use of Switch | Would it stop working without Switch? | Cross-app rooms, room links, shared + exclusive roles, access rules as the approval gate, agent-to-agent handoff |
 | Technical execution | Does it run; is it reproducible from the repo? | `docker compose up`, room template YAML, custom protocol agent, step-by-step README |
 | Creativity and impact | Fresh idea that solves a real team's problem | End user → engineering → back to the user; not an incident-rollback clone |
-| Presentation | Do video + README make Switch's role obvious? | README headed by the criteria; video built around three Switch-only moments |
+| Presentation | Do video + README make Switch's role obvious? | README leads with what it is, then why it needs Switch; video built around three Switch-only moments |
 
 The three moments we never cut: the report crossing two chat apps, a non-PM being **refused** by
 `@fixer`, and the "fixed, here's the PR" message landing back with the reporter on Telegram.
@@ -166,8 +166,8 @@ bugline/
                             --add-support makes another support room
     doctor.py               checks the whole setup, one PASS / FAIL line each
     reset_demo.py           puts the demo back to a clean start at BL-1
-  docs/                     switch-setup.md, own-repo.md, build-journal.md, images/ (screenshots,
-                            added by the author)
+  docs/                     switch-setup.md, own-repo.md, design-notes.md (costs, lessons, limits,
+                            layout, CI), build-journal.md, images/ (screenshots and diagrams)
 ```
 
 ## 4. Stack and conventions
@@ -320,20 +320,22 @@ bugline/
 
 ## 8. README structure (judge-facing)
 
-Each heading's first sentence answers its criterion.
+Reader first, and short (about 300 lines). Detail lives in `docs/design-notes.md` and the other docs.
 
-1. Bugline — one paragraph + GIF
-2. Why this stops working without Switch (Use of Switch)
-3. Architecture (diagram)
-4. The workflow, step by step, with screenshots (a judge sees how Switch is used before setup)
-5. Reproduce it (Technical execution): prerequisites, `docker compose up`, fork, env vars,
-   Telegram and Slack connection steps — every command copied from a real run. Side material
-   (the Mattermost variant, running on another repo) lives in `docs/`, not the README
-6. The agents: runtime, role, access rule, link to each brief
-7. The problem this solves for a real team (Creativity and impact)
-8. What the agents got wrong and how the briefs fixed it
-9. Limits and next steps
-10. Licence and credits
+1. Bugline: what it is and who it is for (Creativity and impact), GIF, links to the video, the
+   blog post, the setup guide and the design notes
+2. Why it needs Switch (Use of Switch): one short table, the gate diagram, the refusal quoted
+3. How it works: the rooms and agents diagrams, then one bug end to end from the recorded run,
+   with a screenshot per step and the sequence diagram
+4. Reproduce it (Technical execution): prerequisites; part A (`docker compose up`, seeded faults,
+   tests); part B (fork, chat apps, agent folders, bootstrap, start, doctor). PowerShell and bash
+   both inline, every command copied from a real run. Side material (the Mattermost variant,
+   running on another repo) lives in `docs/`
+5. The agents: runtime, role, access rule, link to each brief; internals diagrams are in each
+   agent's README
+6. Learn more: design notes (costs, what went wrong, limits, layout, CI), setup guide, journal,
+   blog; the main limits in one paragraph
+7. Licence and credits
 
 ## 9. Day-by-day checklist
 
